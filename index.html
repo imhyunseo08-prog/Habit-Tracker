@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Habit Tracker - Final Integration</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  
+  <style>
+    body { font-family: -apple-system, sans-serif; background: #F8FAFC; margin: 0; overflow-x: hidden; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .scroll-container { display: flex; gap: 4px; overflow-x: auto; flex-direction: row-reverse; flex: 1; padding: 1px 0 20px 0; -webkit-overflow-scrolling: touch; }
+    .chart-wrapper { position: relative; height: 160px; width: 100%; display: flex; align-items: flex-end; gap: 12px; padding-bottom: 20px; }
+    .chart-container { position: relative; height: 100%; flex: 1; min-width: 0; }
+    .target-slider-container { width: 35px; height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex-shrink: 0; margin-bottom: 25px; }
+    input[type=range][orient=vertical] { writing-mode: bt-lr; -webkit-appearance: slider-vertical; width: 4px; height: 100%; opacity: 0.6; }
+    .chk-btn { transition: transform 0.1s ease; position: relative; border: 2px solid transparent; }
+    .chk-btn.active { background-color: #6366f1 !important; }
+    .theme-card { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; position: relative; transition: transform 0.2s, box-shadow 0.2s; }
+    .blackboard-container { position: relative; width: 100%; transition: all 0.3s ease; }
+    .blackboard-container.fullscreen { position: fixed; inset: 0; z-index: 9000; background: #334155; padding: 10px; height: 100vh; display: flex; flex-direction: column; }
+    .blackboard-area { background-color: #0f172a; border: 8px solid #1e293b; border-radius: 20px; height: 400px; position: relative; overflow: hidden; touch-action: none; box-shadow: inset 0 0 40px rgba(0,0,0,0.5); flex: 1; }
+    .board-content-wrapper { width: 5000px; height: 5000px; position: absolute; top: 0; left: 0; transform-origin: 0 0; background-color: #334155; border: 4px dashed rgba(255,255,255,0.2); box-sizing: content-box; }
+    .drawing-canvas { position: absolute; top: 0; left: 0; z-index: 1; touch-action: none; background: transparent; }
+    .memo-card { position: absolute; padding: 12px; background: #fef08a; color: #854d0e; font-weight: bold; font-size: 14px; border-radius: 4px; box-shadow: 2px 4px 6px rgba(0,0,0,0.3); cursor: grab; user-select: none; word-break: break-all; touch-action: none; z-index: 10; white-space: pre-wrap; display: flex; flex-direction: column; }
+    .memo-card.active-border { border: 2px solid #6366f1; }
+    .memo-card.locked { border: 2px solid #ef4444; cursor: default; }
+    .resize-h { position: absolute; right: 0; top: 0; width: 8px; height: 100%; cursor: ew-resize; z-index: 15; }
+    .resize-v { position: absolute; bottom: 0; left: 0; width: 100%; height: 8px; cursor: ns-resize; z-index: 15; }
+    .memo-toolbar { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); background: white; border-radius: 8px; padding: 4px; display: flex; gap: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 50; white-space: nowrap; }
+    .memo-toolbar::after { content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px; border-width: 6px; border-style: solid; border-color: white transparent transparent transparent; }
+    .tool-btn { padding: 4px 8px; font-size: 12px; font-weight: bold; border-radius: 4px; background: #f1f5f9; color: #475569; }
+    .tool-btn.danger { color: #ef4444; background: #fee2e2; }
+    .tool-btn.active { color: white; background: #6366f1; }
+    .board-controls { margin-top: 10px; padding: 8px 12px; background: #ffffff; border-radius: 20px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+    .color-swatch { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid #e2e8f0; cursor: pointer; flex-shrink: 0; }
+    .color-swatch.selected { transform: scale(1.2); border-color: #6366f1; }
+    #external-modal { position: fixed; inset: 0; z-index: 9999; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px); }
+    #external-modal.active { display: flex; }
+    .collapsible-content { transition: max-height 0.3s ease-out, opacity 0.2s ease; overflow: hidden; }
+    .collapsed { max-height: 0; opacity: 1; pointer-events: none; }
+    .expanded { max-height: 3000px; opacity: 1; }
+    .goal-input { width: 100%; background: #f1f5f9; border: 1px solid transparent; border-radius: 12px; padding: 10px 14px; font-size: 18px; font-weight: 800; color: #1e293b; outline: none; transition: all 0.2s; white-space: pre-wrap; display: block; overflow: hidden; }
+    .goal-input:focus { border-color: #6366f1; background: white; }
+    .goal-input:disabled { background: transparent; border-color: transparent; padding: 0; cursor: default; }
+    .goal-label { font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px; display: block; }
+    .goal-item-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <div id="external-modal">
+    <div class="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl">
+      <h3 id="modal-title" class="text-2xl font-black mb-6 text-slate-800">수정</h3>
+      <textarea id="common-input" class="w-full bg-slate-100 p-4 rounded-2xl mb-8 outline-none font-bold text-lg min-h-[120px]" placeholder="내용 입력..." autocomplete="off"></textarea>
+      <div class="flex gap-3">
+        <button onclick="closeModal()" class="flex-1 py-4 bg-slate-200 text-slate-600 rounded-2xl font-bold">취소</button>
+        <button id="modal-submit-btn" class="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const e = React.createElement;
+    const { useState, useEffect, useRef, useCallback, memo, useMemo } = React;
+
+    const getInitialData = (k, f) => { const s = localStorage.getItem(k); return s ? JSON.parse(s) : f; };
+
+    // 도넛 차트
+    const DonutGauge = memo(({ percent }) => {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+      const displayPercent = Math.min(100, Math.max(0, percent));
+      useEffect(() => {
+        if (chartRef.current) chartRef.current.destroy();
+        chartRef.current = new Chart(canvasRef.current.getContext('2d'), {
+          type: 'doughnut',
+          data: { datasets: [{ data: [displayPercent, 100 - displayPercent], backgroundColor: ['#6366f1', '#f1f5f9'], borderWidth: 0, cutout: '75%' }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false } } }
+        });
+      }, [displayPercent]);
+      return e('div', { className: 'relative w-24 h-24' }, e('canvas', { ref: canvasRef }), e('div', { className: 'absolute inset-0 flex items-center justify-center' }, e('span', { className: 'text-lg font-black text-slate-800' }, `${Math.round(displayPercent)}%`)));
+    });
+
+    // 메인 분석 바 차트
+    const AnalysisChart = memo(({ data }) => {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+      useEffect(() => {
+        if (chartRef.current) chartRef.current.destroy();
+        chartRef.current = new Chart(canvasRef.current.getContext('2d'), {
+          type: 'bar',
+          data: { labels: data.map(d => d.name), datasets: [{ data: data.map(d => d.score), backgroundColor: '#6366f1', borderRadius: 8, barThickness: 20 }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 }, x: { grid: { display: false } } } }
+        });
+      }, [data]);
+      return e('canvas', { ref: canvasRef });
+    });
+
+    // 테마별 트렌드 라인 차트
+    const TrendChart = memo(({ data, labels, color, targetValue, averageValue }) => {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+      useEffect(() => {
+        if (chartRef.current) chartRef.current.destroy();
+        chartRef.current = new Chart(canvasRef.current.getContext('2d'), {
+          type: 'line',
+          data: { 
+            labels: labels.map(l => l.split('-').slice(1).join('.')), 
+            datasets: [
+              { label: '목표', data: new Array(data.length).fill(targetValue), borderColor: '#ef4444', borderDash: [4, 4], pointRadius: 0, fill: false },
+              { data: data, borderColor: color, backgroundColor: color + '20', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.4 }
+            ] 
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: true }, y: { display: false, min: 0, max: 110 } } }
+        });
+      }, [data, labels, color, targetValue, averageValue]);
+      return e('div', { className: 'chart-container' }, e('canvas', { ref: canvasRef }));
+    });
+
+    // 앱 메인 로직
+    const App = () => {
+      const [habits, setHabits] = useState(() => getInitialData('habits_final', []));
+      const [themes, setThemes] = useState(() => getInitialData('themes_final', []));
+      const [themeTargets, setThemeTargets] = useState(() => getInitialData('targets_final', {}));
+      const [daysRange, setDaysRange] = useState(() => getInitialData('days_range_final', 14));
+      
+      const [goal, setGoal] = useState({ project: '', targetItems: [], reason: '', startDate: '', endDate: '' });
+      const [isGoalEditing, setIsGoalEditing] = useState(false);
+      const [memos, setMemos] = useState(() => getInitialData('memos_final', []));
+      const [boardTransform, setBoardTransform] = useState(() => getInitialData('board_transform_final', { x: 0, y: 0, s: 10 }));
+      const [curTheme, setCurTheme] = useState(''); 
+      const [inputVal, setInputVal] = useState('');
+      const [modalState, setModalState] = useState({ type: null, targetId: null });
+
+      useEffect(() => {
+        localStorage.setItem('habits_final', JSON.stringify(habits));
+        localStorage.setItem('themes_final', JSON.stringify(themes));
+        localStorage.setItem('memos_final', JSON.stringify(memos));
+        localStorage.setItem('targets_final', JSON.stringify(themeTargets));
+        localStorage.setItem('days_range_final', JSON.stringify(daysRange));
+        localStorage.setItem('board_transform_final', JSON.stringify(boardTransform));
+      }, [habits, themes, memos, themeTargets, daysRange, boardTransform]);
+
+      const dates = useMemo(() => Array.from({length: daysRange}, (_, i) => {
+        const d = new Date(); d.setDate(d.getDate() - (daysRange - 1 - i));
+        return d.toISOString().split('T')[0];
+      }), [daysRange]);
+
+      const themeAnalysis = useMemo(() => themes.map(t => {
+        const th = habits.filter(h => h.theme === t);
+        if (!th.length) return { name: t, score: 0 };
+        const tc = th.reduce((a, h) => a + dates.filter(d => h.checks[d]).length, 0);
+        return { name: t, score: Math.round((tc / (th.length * dates.length)) * 100) };
+      }), [themes, habits, dates]);
+
+      const handleAdd = () => {
+        if (!inputVal.trim()) return;
+        if (curTheme) setHabits(p => [...p, { id: Date.now(), name: inputVal, theme: curTheme, checks: {}, total: 0 }]);
+        else if (!themes.includes(inputVal)) { setThemes(p => [...p, inputVal]); setCurTheme(inputVal); }
+        setInputVal('');
+      };
+
+      return e('div', { className: 'max-w-md mx-auto p-5 pb-32' },
+        e('header', { className: 'mb-4 flex justify-between items-end' }, 
+          e('h1', { className: 'text-4xl font-black text-slate-900 tracking-tighter' }, 'Habit'),
+          e('input', { type: 'number', className: 'w-12 text-center font-bold bg-white rounded-lg', value: daysRange, onChange: (ev) => setDaysRange(ev.target.value) })
+        ),
+        e('div', { className: 'bg-white p-5 rounded-[2rem] mb-4 shadow-sm' }, e(AnalysisChart, { data: themeAnalysis })),
+        
+        // 목표 섹션
+        e('div', { className: 'bg-white p-8 rounded-[2.5rem] mb-4 shadow-sm' },
+          e('div', { className: 'flex justify-between mb-4' }, e('h3', { className: 'text-xl font-black' }, '🎯 목표 설정'), e('button', { onClick: () => setIsGoalEditing(!isGoalEditing) }, isGoalEditing ? '완력' : '수정')),
+          e('div', { className: 'space-y-4' }, 
+            e('input', { className: 'goal-input', placeholder: '프로젝트명', value: goal.project, disabled: !isGoalEditing, onChange: (e) => setGoal({...goal, project: e.target.value}) }),
+            e('div', { className: 'flex gap-2' }, 
+              e('input', { type: 'date', className: 'goal-input', value: goal.startDate, disabled: !isGoalEditing, onChange: (e) => setGoal({...goal, startDate: e.target.value}) }),
+              e('input', { type: 'date', className: 'goal-input', value: goal.endDate, disabled: !isGoalEditing, onChange: (e) => setGoal({...goal, endDate: e.target.value}) })
+            )
+          )
+        ),
+
+        // 테마 및 습관 리스트
+        themes.map(tName => e('div', { key: tName, className: 'bg-white rounded-[2rem] p-5 mb-3 shadow-sm' },
+          e('h2', { className: 'font-black mb-2' }, tName),
+          habits.filter(h => h.theme === tName).map(h => e('div', { key: h.id, className: 'flex justify-between py-1' }, e('span', null, h.name), e('button', { onClick: () => setHabits(habits.map(x => x.id === h.id ? {...x, checks: {...x.checks, [dates[dates.length-1]]: !x.checks[dates[dates.length-1]]}} : x)) }, h.checks[dates[dates.length-1]] ? '✅' : '⬜')))
+        )),
+
+        // 하단 입력바
+        e('div', { className: 'fixed bottom-6 left-0 right-0 px-5 max-w-md mx-auto' },
+          e('div', { className: 'bg-slate-900 p-2 rounded-[2rem] flex items-center gap-2' },
+            e('select', { className: 'bg-slate-800 text-white p-2 rounded-xl text-xs', value: curTheme, onChange: (e) => setCurTheme(e.target.value) }, e('option', { value: '' }, '테마 선택'), themes.map(t => e('option', { key: t, value: t }, t))),
+            e('input', { className: 'flex-1 bg-transparent text-white p-2 outline-none', value: inputVal, onChange: (e) => setInputVal(e.target.value), onKeyDown: (e) => e.key === 'Enter' && handleAdd() }),
+            e('button', { onClick: handleAdd, className: 'bg-indigo-500 text-white w-10 h-10 rounded-xl' }, '+')
+          )
+        )
+      );
+    };
+
+    ReactDOM.render(e(App), document.getElementById('root'));
+    window.closeModal = () => document.getElementById('external-modal').classList.remove('active');
+  </script>
+</body>
+</html>
