@@ -1,0 +1,1825 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Habit Tracker v93</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    body { font-family: -apple-system, sans-serif; background: #F8FAFC; margin: 0; overflow-x: hidden; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .scroll-container { display: flex; gap: 4px; overflow-x: auto; flex-direction: row-reverse; flex: 1; padding: 1px 0 20px 0; -webkit-overflow-scrolling: touch; }
+    .chart-wrapper { position: relative; height: 160px; width: 100%; display: flex; align-items: flex-end; padding-bottom: 20px; }
+    .chart-container { position: relative; height: 100%; flex: 1; min-width: 0; }
+    .chk-btn { transition: transform 0.1s ease; position: relative; border: 2px solid transparent; }
+    .chk-btn.active { background-color: #6366f1 !important; }
+    .theme-card { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; position: relative; transition: transform 0.2s, box-shadow 0.2s; border-left: 4px solid #6366f1; }
+    .theme-card.priority { border-left: 4px solid #f59e0b; box-shadow: 0 2px 16px rgba(245,158,11,0.18), 0 0 0 1.5px #fde68a; }
+    .theme-card.theme-checkbox-mode { border-left: 4px solid #8b5cf6; cursor: pointer; }
+    .theme-card.theme-checkbox-mode.checked { border-left: 4px solid #10b981; background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%); box-shadow: 0 2px 16px rgba(16,185,129,0.2), 0 0 0 2px #6ee7b7; }
+    .theme-checkbox-overlay { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; }
+    .theme-checkbox-big { width: 48px; height: 48px; border-radius: 50%; border: 3px solid #8b5cf6; display: flex; align-items: center; justify-content: center; font-size: 24px; transition: all 0.2s; }
+    .theme-checkbox-big.checked { background: #10b981; border-color: #10b981; }
+
+    /* ── 칠판 ── */
+    .blackboard-container { position: relative; width: 100%; transition: all 0.3s ease; }
+
+    /* FULLSCREEN: 화면 전체를 칠판으로 */
+    .blackboard-container.fullscreen {
+      position: fixed;
+      inset: 0;
+      z-index: 9000;
+      background: #1e293b;
+      padding: 8px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* fullscreen일 때 전역 ⚙️/🎬 버튼 숨기기 */
+    .blackboard-container.fullscreen ~ #global-settings-btn,
+    .blackboard-container.fullscreen ~ button[onclick*="openSplashEditor"] {
+      display: none !important;
+    }
+
+    /* fullscreen collapsible: flex로 남은 공간 전부 사용 */
+    .blackboard-container.fullscreen > .collapsible-content {
+      flex: 1;
+      min-height: 0;
+      display: flex !important;
+      flex-direction: column;
+      max-height: none !important;
+      opacity: 1 !important;
+    }
+
+    .blackboard-area {
+      background-color: #0f172a;
+      border: 6px solid #1e293b;
+      border-radius: 16px;
+      height: 400px;
+      position: relative;
+      overflow: hidden;
+      touch-action: none;
+      box-shadow: inset 0 0 40px rgba(0,0,0,0.5);
+      flex-shrink: 0;
+    }
+
+    /* fullscreen: 칠판 영역이 남은 높이 전부 차지 */
+    .blackboard-container.fullscreen .blackboard-area {
+      flex: 1;
+      height: 0;
+      min-height: 0;
+      border-radius: 12px;
+    }
+
+    /* 무한 캔버스 - 20000px */
+    .board-content-wrapper { width: 20000px; height: 20000px; position: absolute; top: 0; left: 0; transform-origin: 0 0; background-color: #334155; border: 4px dashed rgba(255,255,255,0.1); box-sizing: content-box; }
+    .drawing-canvas { position: absolute; top: 0; left: 0; z-index: 1; touch-action: none; background: transparent; width: 20000px; height: 20000px; }
+
+    /* ── 사진 스티커 ── */
+    .photo-sticker { position: absolute; cursor: grab; user-select: none; touch-action: none; z-index: 8; }
+    .photo-sticker img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 4px; pointer-events: none; }
+    .photo-sticker-resize { position: absolute; right: -8px; bottom: -8px; width: 18px; height: 18px; background: white; border: 2px solid #6366f1; border-radius: 50%; cursor: se-resize; z-index: 12; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #6366f1; }
+    .photo-sticker-delete { position: absolute; top: -10px; right: -10px; width: 20px; height: 20px; background: #ef4444; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white; cursor: pointer; z-index: 13; }
+    /* FIXED: 확대 아이콘 - hidden by default, show on selected */
+    .photo-sticker-zoom { position: absolute; bottom: -10px; left: -10px; width: 20px; height: 20px; background: #6366f1; border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 9px; color: white; cursor: pointer; z-index: 13; }
+    .photo-sticker.selected .photo-sticker-zoom { display: flex; }
+    /* FIXED: 고정 표시 */
+    .photo-sticker.locked { cursor: default; border: 2px solid #ef4444; border-radius: 6px; }
+    .photo-sticker-lock { position: absolute; top: -10px; left: -10px; width: 20px; height: 20px; background: #f59e0b; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; color: white; cursor: pointer; z-index: 13; }
+    .photo-upload-btn { background: #6366f1; color: white; border: none; border-radius: 8px; padding: 6px 10px; font-size: 11px; font-weight: 800; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; gap: 4px; }
+    #photo-upload-input { display: none; }
+
+    /* ── 포획 선택 영역 ── */
+    #capture-rect { position: absolute; border: 2px dashed #f59e0b; background: rgba(245,158,11,0.08); pointer-events: none; z-index: 100; display: none; }
+
+    /* 메모 카드 */
+    .memo-card { position: absolute; padding: 12px; background: #fef08a; color: #854d0e; font-weight: bold; font-size: 14px; border-radius: 4px; box-shadow: 2px 4px 6px rgba(0,0,0,0.3); cursor: grab; user-select: none; word-break: break-all; touch-action: none; z-index: 10; white-space: pre-wrap; display: flex; flex-direction: column; }
+    .memo-card.active-border { border: 2px solid #6366f1; }
+    .memo-card.locked { border: 2px solid #ef4444; cursor: default; }
+    .memo-card.captured { border: 2px solid #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.3); }
+    .resize-h { position: absolute; right: -8px; top: 0; width: 16px; height: 100%; cursor: ew-resize; z-index: 15; }
+    .resize-v { position: absolute; bottom: -8px; left: 0; width: 100%; height: 16px; cursor: ns-resize; z-index: 15; }
+    .memo-toolbar { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); background: white; border-radius: 8px; padding: 4px; display: flex; gap: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 50; white-space: nowrap; }
+    .memo-toolbar::after { content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px; border-width: 6px; border-style: solid; border-color: white transparent transparent transparent; }
+    .tool-btn { padding: 4px 8px; font-size: 12px; font-weight: bold; border-radius: 4px; background: #f1f5f9; color: #475569; }
+    .tool-btn.danger { color: #ef4444; background: #fee2e2; }
+    .tool-btn.active { color: white; background: #6366f1; }
+
+    /* board-controls */
+    .board-controls { margin-top: 8px; padding: 8px 12px; background: #ffffff; border-radius: 20px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; box-shadow: 0 4px 15px rgba(0,0,0,0.1); flex-shrink: 0; }
+
+    /* board-header */
+    .board-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 0 2px; flex-shrink: 0; }
+    .board-header-right { display: flex; gap: 6px; align-items: center; }
+
+    /* fullscreen: 헤더에서 제목 숨기고 버튼만 */
+    .blackboard-container.fullscreen .board-header {
+      padding: 0 2px;
+      margin-bottom: 6px;
+    }
+
+    .color-swatch { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid #e2e8f0; cursor: pointer; flex-shrink: 0; }
+    .color-swatch.selected { transform: scale(1.2); border-color: #6366f1; }
+    #external-modal { position: fixed; inset: 0; z-index: 9999; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); }
+    #external-modal.active { display: flex; }
+    #settings-modal { position: fixed; inset: 0; z-index: 9998; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); }
+    #settings-modal.active { display: flex; }
+
+    .collapsible-content { overflow: hidden; }
+    .collapsible-content.collapsed { max-height: 0 !important; opacity: 0; pointer-events: none; }
+    .collapsible-content.expanded { max-height: 9999px; opacity: 1; transition: max-height 0.35s ease-out, opacity 0.2s ease; }
+    /* fullscreen에서는 max-height 제거하고 flex로 늘어나게 */
+    .blackboard-container.fullscreen .collapsible-content.expanded {
+      max-height: none !important;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .expand-down { transform-origin: top center; }
+    .goal-input { width: 100%; background: #f1f5f9; border: 1px solid transparent; border-radius: 12px; padding: 10px 14px; font-size: 18px; font-weight: 800; color: #1e293b; outline: none; transition: all 0.2s; white-space: pre-wrap; display: block; overflow: visible; height: auto; min-height: 48px; }
+    .goal-input:focus { border-color: #6366f1; background: white; }
+    .goal-input:disabled { background: transparent; border-color: transparent; padding: 0; cursor: default; min-height: 0; }
+    .goal-label { font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px; display: block; }
+    .goal-item-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .category-depth-0 { border: 2px solid #c7d2fe; border-radius: 1.8rem; background: #fff; margin-bottom: 1rem; overflow: hidden; box-shadow: 0 2px 12px rgba(99,102,241,0.09); }
+    .category-depth-1 { border: 2px solid #dde3ff; border-radius: 1.3rem; background: #f8faff; margin-bottom: 0.6rem; overflow: hidden; box-shadow: 0 1px 6px rgba(99,102,241,0.06); }
+    .category-depth-2 { border: 1.5px solid #ede9fe; border-radius: 1rem; background: #f5f3ff; margin-bottom: 0.5rem; overflow: hidden; }
+    .category-depth-3 { border: 1.5px dashed #ddd6fe; border-radius: 0.8rem; background: #faf5ff; margin-bottom: 0.4rem; overflow: hidden; }
+    .category-hidden { opacity: 0.45; filter: grayscale(0.5); }
+    .category-header-0 { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.2rem; cursor: pointer; background: linear-gradient(90deg,#eef2ff 0%,#f8faff 100%); border-bottom: 1.5px solid #d4d9ff; }
+    .category-header-1 { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; cursor: pointer; background: #edf0ff; border-bottom: 1px solid #dde3ff; }
+    .category-header-2 { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.9rem; cursor: pointer; background: #f3f0ff; border-bottom: 1px solid #e8e2fd; }
+    .category-header-3 { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.8rem; cursor: pointer; background: #f9f6ff; }
+    .category-body-0 { padding: 0.8rem; background: #f6f8ff; }
+    .category-body-1 { padding: 0.6rem; background: #f4f6ff; }
+    .category-body-2 { padding: 0.5rem; background: #f6f4ff; }
+    .category-body-3 { padding: 0.4rem; background: #fbf8ff; }
+    .card-elevated { box-shadow: 0 2px 16px rgba(0,0,0,0.10), 0 0 0 1.5px #e2e8f0; }
+    .category-chart-card { border-left: 4px solid #a78bfa; }
+    .theme-select-fixed { flex-shrink: 0; width: 90px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* FIXED: analysis panel - proper 4-page swipe */
+    .analysis-panel-wrap { overflow: hidden; position: relative; touch-action: pan-y; }
+    .analysis-panel-inner { display: flex; width: 400%; transition: transform 0.35s cubic-bezier(.4,0,.2,1); will-change: transform; }
+    .analysis-panel-page { flex: 0 0 25%; min-width: 0; }
+
+    .analysis-dot { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; transition: background 0.2s; }
+    .analysis-dot.active { background: #6366f1; }
+    .notebox { background: #fff; border-radius: 1.5rem; box-shadow: 0 2px 12px rgba(99,102,241,0.07), 0 0 0 1.5px #e2e8f0; overflow: hidden; }
+    .notebox-item { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid #f1f5f9; }
+    .notebox-item:last-child { border-bottom: none; }
+    .notebox-item input { flex: 1; background: transparent; border: none; outline: none; font-size: 14px; font-weight: 600; color: #334155; }
+    .notebox-item input::placeholder { color: #cbd5e1; }
+    .notebox-item.done input { text-decoration: line-through; color: #94a3b8; }
+    .notebox-add { display: flex; align-items: center; gap: 8px; padding: 8px 14px; }
+    .notebox-add input { flex: 1; background: transparent; border: none; outline: none; font-size: 14px; color: #334155; }
+    .notebox-add input::placeholder { color: #d1d5db; }
+    .sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 8500; background: white; border-bottom: 1px solid #e2e8f0; padding: 8px 16px; display: flex; align-items: center; gap-8px; max-width: 480px; margin: 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .sync-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .sync-status-dot.synced { background: #10b981; }
+    .sync-status-dot.syncing { background: #f59e0b; animation: pulse 1s infinite; }
+    .sync-status-dot.offline { background: #94a3b8; }
+    .sync-status-dot.error { background: #ef4444; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Splash screen ── */
+    #splash-screen { position:fixed; inset:0; z-index:99999; display:flex; flex-direction:column; transition:opacity 0.5s ease; overflow:hidden; }
+    #splash-screen.hidden { opacity:0; pointer-events:none; }
+    .splash-skip-btn { padding:8px 24px; border:1.5px solid rgba(255,255,255,0.35); background:transparent; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer; letter-spacing:1px; transition:all 0.2s; }
+    .splash-skip-btn:hover { background:rgba(255,255,255,0.12); }
+
+    /* ── Splash Editor ── */
+    #splash-editor { position:fixed; inset:0; z-index:99998; background:#f8fafc; display:none; flex-direction:column; font-family:-apple-system,sans-serif; }
+    #splash-editor.active { display:flex; }
+    .se-topbar { background:white; border-bottom:1px solid #e2e8f0; padding:12px 16px; display:flex; align-items:center; gap:10px; flex-shrink:0; box-shadow:0 1px 4px rgba(0,0,0,0.04); }
+    .se-topbar-title { font-size:15px; font-weight:900; color:#1e293b; flex:1; text-align:center; }
+    .se-back-btn { background:none; border:none; font-size:13px; font-weight:700; color:#64748b; cursor:pointer; padding:4px 8px; white-space:nowrap; }
+    .se-save-top-btn { background:#1e293b; color:white; border:none; border-radius:10px; padding:7px 14px; font-size:13px; font-weight:800; cursor:pointer; white-space:nowrap; }
+    .se-body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+    .se-toggle-row { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:white; border-bottom:1px solid #f1f5f9; }
+    .se-toggle-label { font-size:14px; font-weight:700; color:#334155; }
+    .se-toggle { position:relative; width:44px; height:24px; flex-shrink:0; }
+    .se-toggle input { opacity:0; width:0; height:0; }
+    .se-toggle-slider { position:absolute; inset:0; background:#cbd5e1; border-radius:999px; cursor:pointer; transition:0.2s; }
+    .se-toggle-slider::before { content:''; position:absolute; width:18px; height:18px; left:3px; top:3px; background:white; border-radius:50%; transition:0.2s; }
+    .se-toggle input:checked + .se-toggle-slider { background:#6366f1; }
+    .se-toggle input:checked + .se-toggle-slider::before { transform:translateX(20px); }
+    .se-section-hd { font-size:11px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:1.5px; padding:14px 16px 6px; }
+    .se-slide-list { padding:0 16px 8px; display:flex; flex-direction:column; gap:8px; }
+    .se-slide-item { background:white; border:1.5px solid #e2e8f0; border-radius:14px; padding:11px 14px; display:flex; align-items:center; gap:10px; cursor:pointer; transition:border-color 0.15s, box-shadow 0.15s; }
+    .se-slide-item.sel { border-color:#1e293b; box-shadow:0 0 0 2px rgba(30,41,59,0.12); }
+    .se-slide-num { width:24px; height:24px; border-radius:50%; background:#f1f5f9; font-size:11px; font-weight:900; color:#64748b; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all 0.15s; }
+    .se-slide-item.sel .se-slide-num { background:#1e293b; color:white; }
+    .se-slide-text { flex:1; font-size:13px; font-weight:700; color:#334155; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .se-slide-dur { font-size:11px; font-weight:700; color:#94a3b8; flex-shrink:0; }
+    .se-slide-del { background:none; border:none; color:#fca5a5; font-size:18px; cursor:pointer; flex-shrink:0; padding:2px 6px; line-height:1; }
+    .se-add-slide { margin:0 16px 8px; padding:12px; border:1.5px dashed #cbd5e1; background:transparent; border-radius:12px; font-size:13px; font-weight:700; color:#94a3b8; cursor:pointer; width:calc(100% - 32px); box-sizing:border-box; transition:all 0.15s; }
+    .se-add-slide:hover { border-color:#6366f1; color:#6366f1; background:#f8f5ff; }
+    .se-editing-bar { display:flex; align-items:center; gap:8px; padding:10px 16px 4px; }
+    .se-editing-label { font-size:11px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; }
+    .se-editing-badge { background:#1e293b; color:white; border-radius:999px; font-size:10px; font-weight:900; padding:2px 10px; }
+    .se-edit-section { padding:0 16px 120px; display:flex; flex-direction:column; gap:10px; }
+    .se-card { background:white; border-radius:14px; border:1px solid #f1f5f9; padding:14px 16px; }
+    .se-field-label { font-size:11px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; display:block; }
+    .se-preview-box { border-radius:12px; height:160px; position:relative; overflow:hidden; margin-bottom:2px; box-sizing:border-box; }
+    .se-textarea { width:100%; border:1.5px solid #e2e8f0; border-radius:10px; padding:10px 12px; font-size:14px; font-weight:600; color:#334155; outline:none; resize:none; min-height:72px; background:#f8fafc; box-sizing:border-box; font-family:inherit; }
+    .se-textarea:focus { border-color:#6366f1; background:white; }
+    .se-slider { width:100%; accent-color:#1e293b; cursor:pointer; }
+    .se-slider-labels { display:flex; justify-content:space-between; font-size:10px; color:#94a3b8; font-weight:700; margin-top:2px; }
+    .se-btn-row { display:flex; gap:6px; }
+    .se-btn { flex:1; padding:9px 4px; border:1.5px solid #e2e8f0; background:white; border-radius:10px; font-size:12px; font-weight:700; color:#475569; cursor:pointer; transition:all 0.15s; }
+    .se-btn.on { background:#1e293b; color:white; border-color:#1e293b; }
+    .se-color-row { display:flex; align-items:center; gap:10px; }
+    .se-swatch-label { position:relative; width:34px; height:34px; border-radius:8px; border:1.5px solid #e2e8f0; overflow:hidden; cursor:pointer; flex-shrink:0; display:block; }
+    .se-swatch-label input[type=color] { position:absolute; inset:-6px; width:calc(100%+12px); height:calc(100%+12px); opacity:0; cursor:pointer; }
+    .se-bottom-bar { position:fixed; bottom:0; left:0; right:0; background:white; border-top:1px solid #e2e8f0; padding:12px 16px env(safe-area-inset-bottom,0); display:flex; gap:10px; z-index:99999; }
+    .se-btn-add { flex:1; padding:13px; background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:14px; font-size:13px; font-weight:700; color:#64748b; cursor:pointer; }
+    .se-btn-save { flex:2; padding:13px; background:#1e293b; color:white; border:none; border-radius:14px; font-size:14px; font-weight:800; cursor:pointer; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Splash Screen ── -->
+  <div id="splash-screen"></div>
+
+  <!-- ── Splash Editor ── -->
+  <div id="splash-editor">
+    <div class="se-topbar">
+      <button class="se-back-btn" id="se-back">← 돌아가기</button>
+      <div class="se-topbar-title">◆ 첫 화면 팝업 설정</div>
+      <button class="se-save-top-btn" id="se-save-top">저장 →</button>
+    </div>
+    <div class="se-body">
+      <div class="se-toggle-row">
+        <span class="se-toggle-label">팝업 전체 켜기/끄기</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label class="se-toggle"><input type="checkbox" id="se-enabled" checked><span class="se-toggle-slider"></span></label>
+          <span id="se-enabled-txt" style="font-size:12px;font-weight:800;color:#6366f1;">켜짐</span>
+        </div>
+      </div>
+      <div class="se-section-hd">화면 순서 <span id="se-count"></span></div>
+      <div class="se-slide-list" id="se-list"></div>
+      <button class="se-add-slide" id="se-add-top">+ 새 화면 추가</button>
+      <div id="se-edit-panel" style="display:none;">
+        <div class="se-editing-bar">
+          <span class="se-editing-label">편집 중 —</span>
+          <span class="se-editing-badge" id="se-edit-lbl">1번 화면</span>
+        </div>
+        <div class="se-section-hd" style="padding-top:4px;">미리보기</div>
+        <div style="padding:0 16px 10px;">
+          <div class="se-preview-box" id="se-preview">
+            <span id="se-preview-txt" style="font-weight:900;text-align:center;word-break:break-word;max-width:100%;line-height:1.3;"></span>
+          </div>
+        </div>
+        <div class="se-edit-section">
+          <div class="se-card">
+            <span class="se-field-label">표시할 문구</span>
+            <textarea class="se-textarea" id="se-text" placeholder="화면에 표시할 텍스트"></textarea>
+          </div>
+          <div class="se-card">
+            <span class="se-field-label" id="se-dur-lbl">표시 시간: 1s</span>
+            <input type="range" class="se-slider" id="se-dur" min="0.2" max="15" step="0.2" value="1.5">
+            <div class="se-slider-labels"><span>1s</span><span>8s</span><span>15s</span></div>
+          </div>
+          <div class="se-card">
+            <span class="se-field-label" id="se-sz-lbl">글자 크기: 36PX</span>
+            <input type="range" class="se-slider" id="se-sz" min="12" max="72" step="2" value="36">
+            <div class="se-slider-labels"><span>12</span><span>42</span><span>72</span></div>
+          </div>
+          <div class="se-card" style="display:flex;gap:14px;">
+            <div style="flex:1;">
+              <span class="se-field-label">가로 정렬</span>
+              <div class="se-btn-row" id="se-align-row">
+                <button class="se-btn" data-align="left">왼쪽</button>
+                <button class="se-btn on" data-align="center">가운데</button>
+                <button class="se-btn" data-align="right">오른쪽</button>
+              </div>
+            </div>
+            <div style="flex:1;">
+              <span class="se-field-label">세로 위치</span>
+              <div class="se-btn-row" id="se-valign-row">
+                <button class="se-btn" data-valign="flex-start">위</button>
+                <button class="se-btn on" data-valign="center">중앙</button>
+                <button class="se-btn" data-valign="flex-end">아래</button>
+              </div>
+            </div>
+          </div>
+          <div class="se-card">
+            <span class="se-field-label">폰트 스타일</span>
+            <div class="se-btn-row" id="se-style-row" style="max-width:200px;">
+              <button class="se-btn on" data-fstyle="normal">보통</button>
+              <button class="se-btn" data-fstyle="italic" style="font-style:italic;">이탤릭</button>
+            </div>
+          </div>
+          <div class="se-card" style="display:flex;gap:20px;">
+            <div style="flex:1;">
+              <span class="se-field-label">배경 색상</span>
+              <div class="se-color-row">
+                <label class="se-swatch-label" id="se-bg-sw" style="background:#1e1b4b;">
+                  <input type="color" id="se-bg" value="#1e1b4b">
+                </label>
+                <span id="se-bg-val" style="font-size:12px;font-weight:700;color:#64748b;">#1e1b4b</span>
+              </div>
+            </div>
+            <div style="flex:1;">
+              <span class="se-field-label">글자 색상</span>
+              <div class="se-color-row">
+                <label class="se-swatch-label" id="se-tc-sw" style="background:#ffffff;">
+                  <input type="color" id="se-tc" value="#ffffff">
+                </label>
+                <span id="se-tc-val" style="font-size:12px;font-weight:700;color:#64748b;">#ffffff</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="se-bottom-bar">
+      <button class="se-btn-add" id="se-add-bot">+ 화면 추가</button>
+      <button class="se-btn-save" id="se-save-bot">✓ 저장하기</button>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal">
+    <div class="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl" style="max-height:80vh;overflow-y:auto;">
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="text-xl font-black text-slate-800">⚙️ 설정</h3>
+        <button onclick="closeSettingsModal()" class="text-slate-400 text-xl font-bold">✕</button>
+      </div>
+      <div class="mb-4">
+        <div class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3">체크박스로 사용할 테마 선택</div>
+        <div class="text-[10px] text-slate-400 mb-4 leading-relaxed">선택된 테마는 테마 자체가 하나의 체크박스가 됩니다.</div>
+        <div id="settings-theme-list" class="flex flex-col gap-2"></div>
+      </div>
+      <button onclick="closeSettingsModal()" class="w-full py-3 bg-indigo-600 text-white rounded-2xl font-black mt-4">완료</button>
+    </div>
+  </div>
+
+  <!-- FIXED: Settings + Splash buttons - no overlap issues -->
+  <button id="global-settings-btn" style="position:fixed;top:12px;right:12px;z-index:9900;padding:8px 12px;border-radius:10px;background:#f1f5f9;color:#475569;font-weight:800;border:none;font-size:16px;" title="설정">⚙️</button>
+  <button onclick="window.__openSplashEditor && window.__openSplashEditor()" style="position:fixed;top:12px;right:62px;z-index:9900;padding:8px 10px;border-radius:10px;background:#f1f5f9;color:#475569;font-weight:800;border:none;font-size:14px;" title="첫 화면 편집"><i class="fa-solid fa-film"></i></button>
+
+  <input type="file" id="photo-upload-input" accept="image/*" multiple>
+
+  <div id="root"></div>
+  <div id="external-modal">
+    <div class="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl">
+      <h3 id="modal-title" class="text-2xl font-black mb-6 text-slate-800">수정</h3>
+      <textarea id="common-input" class="w-full bg-slate-100 p-4 rounded-2xl mb-8 outline-none font-bold text-lg min-h-[120px]" placeholder="내용 입력..." autocomplete="off"></textarea>
+      <div class="flex gap-3">
+        <button onclick="closeModal()" class="flex-1 py-4 bg-slate-200 text-slate-600 rounded-2xl font-bold">취소</button>
+        <button id="modal-submit-btn" class="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ══════════════════════════════════════════════
+    //  SPLASH ENGINE v2
+    // ══════════════════════════════════════════════
+    (function() {
+      const LS_SLIDES  = 'splash_slides_v2';
+      const LS_ENABLED = 'splash_enabled_v2';
+      const DEF = { text:'Habit Tracker', duration:1.5, fontSize:40, align:'center', valign:'center', fontStyle:'normal', bgColor:'#1e1b4b', textColor:'#ffffff' };
+      function loadSlides() { try { const s = JSON.parse(localStorage.getItem(LS_SLIDES)); return (Array.isArray(s) && s.length) ? s : [{ ...DEF }]; } catch(e) { return [{ ...DEF }]; } }
+      function saveSlides(sl) { localStorage.setItem(LS_SLIDES, JSON.stringify(sl)); }
+      function isEnabled() { return localStorage.getItem(LS_ENABLED) !== 'false'; }
+      function setEnabled(v) { localStorage.setItem(LS_ENABLED, v ? 'true' : 'false'); }
+      let runDismissed = false;
+      function buildSlideDOM(sl) {
+        const wrap = document.getElementById('splash-screen');
+        if (!wrap) return;
+        wrap.style.background = sl.bgColor || '#1e1b4b';
+        const alignItems = sl.align === 'left' ? 'flex-start' : sl.align === 'right' ? 'flex-end' : 'center';
+        wrap.innerHTML = `
+          <button id="sp-edit-btn" title="첫 화면 편집" style="position:absolute;top:14px;right:14px;z-index:10;background:rgba(255,255,255,0.15);border:none;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            <i class="fa-solid fa-pen" style="color:rgba(255,255,255,0.85);font-size:13px;"></i>
+          </button>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:${alignItems};justify-content:${sl.valign||'center'};padding:40px 28px;width:100%;box-sizing:border-box;">
+            <div style="font-size:${sl.fontSize||40}px;font-weight:900;color:${sl.textColor||'#ffffff'};font-style:${sl.fontStyle||'normal'};text-align:${sl.align||'center'};word-break:break-word;max-width:100%;line-height:1.25;">${(sl.text||'').replace(/\n/g,'<br>')}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding-bottom:36px;">
+            <div style="width:140px;height:3px;background:rgba(255,255,255,0.2);border-radius:999px;overflow:hidden;">
+              <div id="sp-fill" style="height:100%;background:rgba(255,255,255,0.75);border-radius:999px;width:0%;"></div>
+            </div>
+            <button class="splash-skip-btn" id="sp-skip" style="color:${sl.textColor||'#ffffff'};border-color:${sl.textColor||'rgba(255,255,255,0.35)'}40;">바로 시작 →</button>
+          </div>
+        `;
+        document.getElementById('sp-edit-btn').onclick = openEditor;
+        document.getElementById('sp-skip').onclick = dismissSplash;
+      }
+      function dismissSplash() { if (runDismissed) return; runDismissed = true; const el = document.getElementById('splash-screen'); if (el) { el.classList.add('hidden'); setTimeout(() => el.style.display = 'none', 500); } }
+      function runSlideshow() {
+        const slides = loadSlides();
+        if (!isEnabled() || !slides.length) { dismissSplash(); return; }
+        let idx = 0, animId = null, t0 = null;
+        function showAt(i) {
+          if (runDismissed) return;
+          buildSlideDOM(slides[i]);
+          t0 = null;
+          if (animId) cancelAnimationFrame(animId);
+          animId = requestAnimationFrame(function tick(ts) {
+            if (runDismissed) return;
+            if (!t0) t0 = ts;
+            const elapsed = (ts - t0) / 1000;
+            const dur = slides[i].duration || 1.5;
+            const fill = document.getElementById('sp-fill');
+            if (fill) fill.style.width = Math.min(100, (elapsed / dur) * 100) + '%';
+            if (elapsed >= dur) { idx++; idx < slides.length ? showAt(idx) : dismissSplash(); return; }
+            animId = requestAnimationFrame(tick);
+          });
+        }
+        showAt(0);
+      }
+      let edSlides = [], edIdx = 0;
+      function openEditor() {
+        dismissSplash();
+        edSlides = loadSlides().map(s => ({ ...s }));
+        const el = document.getElementById('splash-editor');
+        if (!el) return;
+        el.classList.add('active');
+        document.getElementById('se-enabled').checked = isEnabled();
+        updateEnabledText(); renderList(); selectSlide(0);
+      }
+      function closeEditor() { document.getElementById('splash-editor').classList.remove('active'); }
+      function saveAll() { syncCurrent(); saveSlides(edSlides); setEnabled(document.getElementById('se-enabled').checked); closeEditor(); }
+      function updateEnabledText() { const on = document.getElementById('se-enabled').checked; document.getElementById('se-enabled-txt').textContent = on ? '켜짐' : '꺼짐'; document.getElementById('se-enabled-txt').style.color = on ? '#6366f1' : '#94a3b8'; }
+      function renderList() {
+        const list = document.getElementById('se-list');
+        document.getElementById('se-count').textContent = `(${edSlides.length}개)`;
+        list.innerHTML = '';
+        edSlides.forEach((sl, i) => {
+          const item = document.createElement('div');
+          item.className = 'se-slide-item' + (i === edIdx ? ' sel' : '');
+          item.innerHTML = `<div class="se-slide-num">${i+1}</div><div class="se-slide-text">${sl.text || '(빈 텍스트)'}</div><div class="se-slide-dur">${sl.duration || 1.5}s</div><button class="se-slide-del" data-i="${i}">✕</button>`;
+          item.addEventListener('click', ev => { if (ev.target.dataset.i !== undefined) { const di = parseInt(ev.target.dataset.i); if (edSlides.length <= 1) { alert('최소 1개의 화면이 필요합니다.'); return; } syncCurrent(); edSlides.splice(di, 1); if (edIdx >= edSlides.length) edIdx = edSlides.length - 1; renderList(); selectSlide(edIdx); } else { syncCurrent(); selectSlide(i); } });
+          list.appendChild(item);
+        });
+      }
+      function syncCurrent() {
+        const sl = edSlides[edIdx]; if (!sl) return;
+        sl.text = document.getElementById('se-text').value;
+        sl.duration = parseFloat(document.getElementById('se-dur').value) || 1.5;
+        sl.fontSize = parseInt(document.getElementById('se-sz').value) || 36;
+        sl.bgColor = document.getElementById('se-bg').value;
+        sl.textColor = document.getElementById('se-tc').value;
+        document.querySelectorAll('[data-align]').forEach(b => { if (b.classList.contains('on')) sl.align = b.dataset.align; });
+        document.querySelectorAll('[data-valign]').forEach(b => { if (b.classList.contains('on')) sl.valign = b.dataset.valign; });
+        document.querySelectorAll('[data-fstyle]').forEach(b => { if (b.classList.contains('on')) sl.fontStyle = b.dataset.fstyle; });
+      }
+      function selectSlide(i) {
+        edIdx = i; const sl = edSlides[i]; if (!sl) return;
+        document.getElementById('se-edit-panel').style.display = '';
+        document.getElementById('se-edit-lbl').textContent = `${i+1}번 화면`;
+        document.getElementById('se-text').value = sl.text || '';
+        const dur = sl.duration || 1.5;
+        document.getElementById('se-dur').value = dur;
+        document.getElementById('se-dur-lbl').textContent = `표시 시간: ${dur}s`;
+        const sz = sl.fontSize || 36;
+        document.getElementById('se-sz').value = sz;
+        document.getElementById('se-sz-lbl').textContent = `글자 크기: ${sz}PX`;
+        setColor('bg', sl.bgColor || '#1e1b4b'); setColor('tc', sl.textColor || '#ffffff');
+        setGroup('[data-align]', sl.align || 'center', 'align');
+        setGroup('[data-valign]', sl.valign || 'center', 'valign');
+        setGroup('[data-fstyle]', sl.fontStyle || 'normal', 'fstyle');
+        updatePreview(); renderList();
+      }
+      function setColor(id, val) { document.getElementById('se-'+id).value = val; document.getElementById('se-'+id+'-sw').style.background = val; document.getElementById('se-'+id+'-val').textContent = val; }
+      function setGroup(selector, val, attr) { document.querySelectorAll(selector).forEach(b => b.classList.toggle('on', b.dataset[attr] === val)); }
+      function updatePreview() {
+        const sl = edSlides[edIdx]; if (!sl) return;
+        const box = document.getElementById('se-preview'); const txt = document.getElementById('se-preview-txt');
+        const curText = document.getElementById('se-text').value;
+        const curSz = document.getElementById('se-sz').value;
+        const curBg = document.getElementById('se-bg').value;
+        const curTc = document.getElementById('se-tc').value;
+        const curAlign = [...document.querySelectorAll('[data-align].on')].map(b=>b.dataset.align)[0] || 'center';
+        const curValign = [...document.querySelectorAll('[data-valign].on')].map(b=>b.dataset.valign)[0] || 'center';
+        const curFStyle = [...document.querySelectorAll('[data-fstyle].on')].map(b=>b.dataset.fstyle)[0] || 'normal';
+        box.style.background = curBg; box.style.position = 'relative'; box.style.display = 'block';
+        txt.style.position = 'absolute'; txt.style.left = '12px'; txt.style.right = '12px';
+        txt.style.fontSize = curSz + 'px'; txt.style.color = curTc; txt.style.textAlign = curAlign;
+        txt.style.fontStyle = curFStyle; txt.style.lineHeight = '1.3'; txt.style.maxWidth = '100%'; txt.style.wordBreak = 'break-word';
+        if (curValign === 'flex-start') { txt.style.top = '12px'; txt.style.bottom = 'auto'; txt.style.transform = 'none'; }
+        else if (curValign === 'flex-end') { txt.style.top = 'auto'; txt.style.bottom = '12px'; txt.style.transform = 'none'; }
+        else { txt.style.top = '50%'; txt.style.bottom = 'auto'; txt.style.transform = 'translateY(-50%)'; }
+        txt.innerHTML = curText.replace(/\n/g, '<br>');
+      }
+      function addSlide() { syncCurrent(); edSlides.push({ text: '새 화면', duration: 1.5, fontSize: 36, align: 'center', valign: 'center', fontStyle: 'italic', bgColor: '#ffffff', textColor: '#1a1a1a' }); renderList(); selectSlide(edSlides.length - 1); }
+      window.addEventListener('DOMContentLoaded', () => {
+        window.__openSplashEditor = openEditor;
+        document.getElementById('se-back').onclick = closeEditor;
+        document.getElementById('se-save-top').onclick = saveAll;
+        document.getElementById('se-add-top').onclick = addSlide;
+        document.getElementById('se-add-bot').onclick = addSlide;
+        document.getElementById('se-save-bot').onclick = saveAll;
+        document.getElementById('se-enabled').onchange = updateEnabledText;
+        document.getElementById('se-text').addEventListener('input', ev => { if (edSlides[edIdx]) edSlides[edIdx].text = ev.target.value; updatePreview(); });
+        document.getElementById('se-dur').addEventListener('input', ev => { document.getElementById('se-dur-lbl').textContent = `표시 시간: ${ev.target.value}s`; if (edSlides[edIdx]) edSlides[edIdx].duration = parseFloat(ev.target.value); });
+        document.getElementById('se-sz').addEventListener('input', ev => { document.getElementById('se-sz-lbl').textContent = `글자 크기: ${ev.target.value}PX`; if (edSlides[edIdx]) edSlides[edIdx].fontSize = parseInt(ev.target.value); updatePreview(); });
+        ['[data-align]','[data-valign]','[data-fstyle]'].forEach(sel => { document.querySelectorAll(sel).forEach(btn => { btn.addEventListener('click', () => { document.querySelectorAll(sel).forEach(b => b.classList.remove('on')); btn.classList.add('on'); if (sel === '[data-align]' && edSlides[edIdx]) edSlides[edIdx].align = btn.dataset.align; if (sel === '[data-valign]' && edSlides[edIdx]) edSlides[edIdx].valign = btn.dataset.valign; if (sel === '[data-fstyle]' && edSlides[edIdx]) edSlides[edIdx].fontStyle = btn.dataset.fstyle; updatePreview(); }); }); });
+        ['bg','tc'].forEach(id => { document.getElementById('se-'+id).addEventListener('input', ev => { document.getElementById('se-'+id+'-sw').style.background = ev.target.value; document.getElementById('se-'+id+'-val').textContent = ev.target.value; if (edSlides[edIdx]) { if (id === 'bg') edSlides[edIdx].bgColor = ev.target.value; else edSlides[edIdx].textColor = ev.target.value; } updatePreview(); }); });
+        runSlideshow();
+      });
+    })();
+
+    // ══════════════════════════════════════════════
+    //  Google Drive Sync
+    // ══════════════════════════════════════════════
+    const GOOGLE_CLIENT_ID = '447289508895-tbrh0n6bq9jjmh4rigf3bsu5plnqaesk.apps.googleusercontent.com';
+    const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+    const SAVE_FILE_NAME = 'habit_tracker_data.json';
+    let gAccessToken = null; let gSyncStatus = 'offline'; let gSyncStatusListeners = [];
+    function onSyncStatusChange(fn) { gSyncStatusListeners.push(fn); }
+    function setSyncStatus(s) { gSyncStatus = s; gSyncStatusListeners.forEach(fn => fn(s)); }
+    function googleSignIn() {
+      return new Promise((resolve, reject) => {
+        if (!window.google) { reject(new Error('구글 라이브러리 로드 안됨')); return; }
+        const client = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: DRIVE_SCOPE, callback: (resp) => { if (resp.error) { reject(resp); return; } gAccessToken = resp.access_token; resolve(resp.access_token); } });
+        client.requestAccessToken();
+      });
+    }
+    function googleSignOut() { if (gAccessToken) { google.accounts.oauth2.revoke(gAccessToken); gAccessToken = null; } setSyncStatus('offline'); }
+    async function getDriveFileId() { const res = await fetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='${SAVE_FILE_NAME}'&fields=files(id,name)`, { headers: { Authorization: `Bearer ${gAccessToken}` } }); const data = await res.json(); return (data.files && data.files.length > 0) ? data.files[0].id : null; }
+    async function loadFromDrive() { if (!gAccessToken) return null; try { setSyncStatus('syncing'); const fileId = await getDriveFileId(); if (!fileId) { setSyncStatus('synced'); return null; } const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: `Bearer ${gAccessToken}` } }); if (!res.ok) throw new Error('파일 읽기 실패'); const data = await res.json(); setSyncStatus('synced'); return data; } catch (e) { console.error('Drive 불러오기 실패:', e); setSyncStatus('error'); return null; } }
+    async function saveToDrive(dataObj) { if (!gAccessToken) return; try { setSyncStatus('syncing'); const fileId = await getDriveFileId(); const body = JSON.stringify(dataObj); let res; if (fileId) { res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, { method: 'PATCH', headers: { Authorization: `Bearer ${gAccessToken}`, 'Content-Type': 'application/json' }, body }); } else { const meta = JSON.stringify({ name: SAVE_FILE_NAME, parents: ['appDataFolder'] }); const boundary = 'habit_boundary'; const multipart = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`; res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${gAccessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart }); } if (!res.ok) throw new Error('저장 실패'); setSyncStatus('synced'); } catch (e) { console.error('Drive 저장 실패:', e); setSyncStatus('error'); } }
+
+    // ══════════════════════════════════════════════
+    //  App
+    // ══════════════════════════════════════════════
+    const e = React.createElement;
+    const { useState, useEffect, useRef, useCallback, memo, useMemo } = React;
+    const getInitialData = (k, f) => { const s = localStorage.getItem(k); return s ? JSON.parse(s) : f; };
+    const getTodayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+
+    const createOrUpdateChart = (chartRef, ctx, configFactory) => {
+      const cfg = configFactory();
+      if (chartRef.current) { chartRef.current.config.type = cfg.type; chartRef.current.config.data = cfg.data; chartRef.current.config.options = cfg.options; if (cfg.plugins) chartRef.current.config.plugins = cfg.plugins; chartRef.current.update('none'); }
+      else { chartRef.current = new Chart(ctx, cfg); }
+    };
+
+    const SyncBar = memo(({ onLogin, onLogout, onManualSync, isLoggedIn, syncStatus, lastSyncTime }) => {
+      const dotClass = { synced:'synced', syncing:'syncing', offline:'offline', error:'error' }[syncStatus] || 'offline';
+      const statusText = { synced:'동기화됨', syncing:'동기화 중...', offline:'오프라인', error:'오류 발생' }[syncStatus] || '';
+      return e('div', { style:{ position:'fixed', top:0, left:0, right:0, zIndex:8500, background:'white', borderBottom:'1px solid #e2e8f0', padding:'6px 16px', display:'flex', alignItems:'center', gap:'8px', boxShadow:'0 2px 8px rgba(0,0,0,0.06)', maxWidth:'480px', margin:'0 auto' } },
+        e('div', { className:`sync-status-dot ${dotClass}` }),
+        e('span', { style:{fontSize:'11px', fontWeight:800, color:'#64748b', flex:1} }, isLoggedIn ? `구글 드라이브 • ${statusText}${lastSyncTime ? ' • '+lastSyncTime : ''}` : '구글 드라이브 미연결'),
+        isLoggedIn
+          ? e('div', { style:{display:'flex', gap:'6px'} },
+              e('button', { onClick:onManualSync, style:{fontSize:'10px', fontWeight:800, background:'#eef2ff', color:'#6366f1', border:'none', borderRadius:'999px', padding:'4px 10px', cursor:'pointer'} }, '↻ 동기화'),
+              e('button', { onClick:onLogout, style:{fontSize:'10px', fontWeight:800, background:'#f1f5f9', color:'#94a3b8', border:'none', borderRadius:'999px', padding:'4px 10px', cursor:'pointer'} }, '로그아웃')
+            )
+          : e('button', { onClick:onLogin, style:{fontSize:'10px', fontWeight:800, background:'#6366f1', color:'white', border:'none', borderRadius:'999px', padding:'4px 12px', cursor:'pointer'} }, '구글 로그인')
+      );
+    });
+
+    const DonutGauge = memo(({ percent }) => {
+      const canvasRef = useRef(null); const chartRef = useRef(null);
+      const dp = Math.min(100, Math.max(0, percent));
+      useEffect(() => {
+        if (!canvasRef.current) return;
+        createOrUpdateChart(chartRef, canvasRef.current.getContext('2d'), () => ({ type: 'doughnut', data: { datasets: [{ data: [dp, 100-dp], backgroundColor: ['#6366f1','#f1f5f9'], borderWidth: 0, cutout: '75%' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false } }, animation: { duration: 300 } } }));
+      }, [dp]);
+      return e('div', { className: 'relative w-24 h-24' }, e('canvas', { ref: canvasRef }), e('div', { className: 'absolute inset-0 flex items-center justify-center' }, e('span', { className: 'text-lg font-black text-slate-800' }, `${Math.round(dp)}%`)));
+    });
+
+    const AnalysisChart = memo(({ themes, habits, dates, goals, priorityThemes, themeCheckboxModes, themeCheckedToday, todayStr }) => {
+      const canvasRef = useRef(null); const chartRef = useRef(null);
+      const allGoalItems = useMemo(() => goals.flatMap(g => g.targetItems), [goals]);
+      const allGoalDates = useMemo(() => { const set = new Set(); goals.forEach(g => { const s = new Date(g.startDate), en = new Date(g.endDate); if (isNaN(s)||isNaN(en)) return; let c = new Date(s); while(c<=en){ set.add(`${c.getFullYear()}-${String(c.getMonth()+1).padStart(2,'0')}-${String(c.getDate()).padStart(2,'0')}`); c.setDate(c.getDate()+1); } }); return Array.from(set); }, [goals]);
+      useEffect(() => {
+        if (!canvasRef.current) return;
+        const hs = themes.map(t => {
+          if (!dates.length) return 0;
+          if (themeCheckboxModes && themeCheckboxModes.has(t)) {
+            const checked = (themeCheckedToday && themeCheckedToday[t]);
+            const checkedScore = checked ? 100 : 0;
+            const th = habits.filter(h => h.theme === t);
+            const otherDays = dates.filter(d => d !== todayStr);
+            const otherScore = (th.length && otherDays.length) ? Math.round(th.reduce((a,h)=>a+otherDays.filter(d=>h.checks[d]).length,0)/(th.length*otherDays.length)*100) : 0;
+            return dates.length === 1 ? checkedScore : Math.round((otherScore*(dates.length-1) + checkedScore) / dates.length);
+          }
+          const th=habits.filter(h=>h.theme===t); if(!th.length) return 0;
+          const tc=th.reduce((a,h)=>a+dates.filter(d=>h.checks[d]).length,0);
+          return Math.round((tc/(th.length*dates.length))*100);
+        });
+        const ps = themes.map(t => { if (themeCheckboxModes && themeCheckboxModes.has(t)) return null; const isT=allGoalItems.some(it=>it.theme===t); if(!isT) return null; const th=habits.filter(h=>h.theme===t); if(!th.length||!allGoalDates.length) return 0; const tc=th.reduce((a,h)=>a+allGoalDates.filter(d=>h.checks[d]).length,0); return Math.round((tc/(th.length*allGoalDates.length))*100); });
+        const tl = themes.map(t => { const items=allGoalItems.filter(it=>it.theme===t); return items.length?Math.max(...items.map(i=>i.target)):null; });
+        const barColors = themes.map(t => { if (themeCheckboxModes && themeCheckboxModes.has(t)) return (themeCheckedToday && themeCheckedToday[t]) ? '#10b981' : '#d1d5db'; return (priorityThemes&&priorityThemes.has(t))?'#f59e0b':'#6366f1'; });
+        createOrUpdateChart(chartRef, canvasRef.current.getContext('2d'), () => ({ type: 'bar', data: { labels: themes, datasets: [{ label:'전체', data:hs, backgroundColor:barColors, borderRadius:6, barThickness:20, order:3 }, { label:'기간', data:ps, backgroundColor:'transparent', borderColor:'#ef4444', borderWidth:2, borderRadius:6, barThickness:20, grouped:false, order:2 }, { label:'목표치', data:tl, type:'line', borderColor:'#ef4444', borderWidth:2, pointStyle:'dash', pointRadius:(ctx)=>(ctx.dataset.data[ctx.dataIndex]===null?0:12), showLine:false, order:1 }] }, options: { responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ y:{beginAtZero:true,max:100,ticks:{stepSize:20,font:{size:10}}}, x:{grid:{display:false},ticks:{font:{size:9,weight:'bold'},maxRotation:45,minRotation:45}} } } }));
+      }, [themes, habits, dates, allGoalDates, allGoalItems, priorityThemes, themeCheckboxModes, themeCheckedToday, todayStr]);
+      return e('canvas', { ref: canvasRef });
+    });
+
+    const CategoryAnalysisChart = memo(({ visibleCats, habits, dates, getCategoryThemes, themeCheckboxModes, themeCheckedToday, todayStr }) => {
+      const canvasRef = useRef(null); const chartRef = useRef(null);
+      useEffect(() => {
+        if (!canvasRef.current) return;
+        const cats = visibleCats.filter(c => getCategoryThemes(c).length > 0);
+        if (!cats.length) { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } return; }
+        const labels = cats.map(c => c.name);
+        const scores = cats.map(c => {
+          const catThemes = getCategoryThemes(c);
+          if (!catThemes.length || !dates.length) return 0;
+          const maxScore = catThemes.length * 100;
+          const total = catThemes.reduce((acc, tName) => {
+            if (themeCheckboxModes && themeCheckboxModes.has(tName)) { const checked = (themeCheckedToday && themeCheckedToday[tName]); const checkedScore = checked ? 100 : 0; const th = habits.filter(h => h.theme === tName); const otherDays = dates.filter(d => d !== todayStr); const otherScore = (th.length && otherDays.length) ? th.reduce((a,h)=>a+otherDays.filter(d=>h.checks[d]).length,0)/(th.length)*100/otherDays.length : 0; return acc + (dates.length === 1 ? checkedScore : (otherScore*(dates.length-1) + checkedScore) / dates.length); }
+            const th=habits.filter(h=>h.theme===tName); if(!th.length) return acc;
+            return acc+dates.reduce((da,d)=>da+Math.round((th.filter(h=>h.checks[d]).length/th.length)*100),0)/dates.length;
+          }, 0);
+          return Math.round((total/maxScore)*100);
+        });
+        createOrUpdateChart(chartRef, canvasRef.current.getContext('2d'), () => ({ type:'bar', data:{ labels, datasets:[{ label:'카테고리 달성률', data:scores, backgroundColor:'#a78bfa', borderRadius:6, barThickness:20 }] }, options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ y:{beginAtZero:true,max:100,ticks:{stepSize:20,font:{size:10}}}, x:{grid:{display:false},ticks:{font:{size:9,weight:'bold'},maxRotation:45,minRotation:45}} } } }));
+      }, [visibleCats, habits, dates, getCategoryThemes, themeCheckboxModes, themeCheckedToday, todayStr]);
+      return e('canvas', { ref: canvasRef });
+    });
+
+    const TodayThemeChart = memo(({ themes, habits, priorityThemes, themeCheckboxModes, themeCheckedToday, todayStr }) => {
+      const canvasRef = useRef(null); const chartRef = useRef(null);
+      useEffect(() => {
+        if (!canvasRef.current) return;
+        const hs = themes.map(t => { if (themeCheckboxModes && themeCheckboxModes.has(t)) return (themeCheckedToday && themeCheckedToday[t]) ? 100 : 0; const th = habits.filter(h => h.theme === t); if (!th.length) return 0; return Math.round(th.filter(h => h.checks[todayStr]).length / th.length * 100); });
+        const barColors = themes.map(t => { if (themeCheckboxModes && themeCheckboxModes.has(t)) return (themeCheckedToday && themeCheckedToday[t]) ? '#10b981' : '#d1d5db'; return (priorityThemes && priorityThemes.has(t)) ? '#f59e0b' : '#6366f1'; });
+        createOrUpdateChart(chartRef, canvasRef.current.getContext('2d'), () => ({ type:'bar', data:{ labels:themes, datasets:[{ label:'오늘', data:hs, backgroundColor:barColors, borderRadius:6, barThickness:20 }] }, options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ y:{beginAtZero:true,max:100,ticks:{stepSize:20,font:{size:10}}}, x:{grid:{display:false},ticks:{font:{size:9,weight:'bold'},maxRotation:45,minRotation:45}} } } }));
+      }, [themes, habits, priorityThemes, themeCheckboxModes, themeCheckedToday, todayStr]);
+      return e('canvas', { ref: canvasRef });
+    });
+
+    const TodayCategoryChart = memo(({ visibleCats, habits, getCategoryThemes, themeCheckboxModes, themeCheckedToday, todayStr }) => {
+      const canvasRef = useRef(null); const chartRef = useRef(null);
+      useEffect(() => {
+        if (!canvasRef.current) return;
+        const cats = visibleCats.filter(c => getCategoryThemes(c).length > 0);
+        if (!cats.length) { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } return; }
+        const scores = cats.map(c => { const catThemes = getCategoryThemes(c); if (!catThemes.length) return 0; const total = catThemes.reduce((acc, tName) => { if (themeCheckboxModes && themeCheckboxModes.has(tName)) return acc + ((themeCheckedToday && themeCheckedToday[tName]) ? 100 : 0); const th = habits.filter(h => h.theme === tName); if (!th.length) return acc; return acc + Math.round(th.filter(h => h.checks[todayStr]).length / th.length * 100); }, 0); return Math.round(total / (catThemes.length * 100) * 100); });
+        createOrUpdateChart(chartRef, canvasRef.current.getContext('2d'), () => ({ type:'bar', data:{ labels:cats.map(c=>c.name), datasets:[{ label:'오늘 카테고리', data:scores, backgroundColor:'#c4b5fd', borderRadius:6, barThickness:20 }] }, options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{display:false} }, scales:{ y:{beginAtZero:true,max:100,ticks:{stepSize:20,font:{size:10}}}, x:{grid:{display:false},ticks:{font:{size:9,weight:'bold'},maxRotation:45,minRotation:45}} } } }));
+      }, [visibleCats, habits, getCategoryThemes, themeCheckboxModes, themeCheckedToday, todayStr]);
+      return e('canvas', { ref: canvasRef });
+    });
+
+    const TrendChart = memo(({ data, labels, color, targetValue, averageValue, hasGoal, goalDates, periodScore, maxY }) => {
+      const canvasRef = useRef(null); const chartRef = useRef(null);
+      useEffect(() => {
+        if (!canvasRef.current) return;
+        const yMax = maxY||115;
+        const datasets = [{ label:'실제', data, borderColor:color, backgroundColor:color==='#6366f1'?'rgba(99,102,241,0.2)':'rgba(167,139,250,0.15)', borderWidth:2, pointRadius:0, fill:true, tension:0.4, order:1 }, { label:'평균', data:new Array(data.length).fill(averageValue), borderColor:color, borderWidth:1.5, pointRadius:0, fill:false, order:2 }];
+        if (hasGoal) { datasets.push({ label:'목표치', data:labels.map(d=>goalDates.includes(d)?targetValue:null), borderColor:'#ef4444', borderWidth:1.5, pointRadius:0, fill:true, backgroundColor:'rgba(239,68,68,0.08)', tension:0, order:10 }); datasets.push({ label:'기간달성', data:labels.map(d=>goalDates.includes(d)?periodScore:null), borderColor:'#10b981', borderWidth:1.5, borderDash:[3,3], pointRadius:0, fill:false, order:5 }); }
+        createOrUpdateChart(chartRef, canvasRef.current.getContext('2d'), () => ({ type:'line', data:{ labels:labels.map(l=>l.split('-').slice(1).join('.')), datasets }, options:{ responsive:true, maintainAspectRatio:false, animation:false, layout:{padding:{right:45}}, plugins:{legend:{display:false}}, scales:{ x:{display:true,grid:{display:false},ticks:{font:{size:8},maxRotation:0,minRotation:0}}, y:{display:false,min:0,max:yMax} } }, plugins:[{ id:'endLabels', afterDatasetsDraw(chart){ const {ctx}=chart; chart.data.datasets.forEach((ds,i)=>{ const meta=chart.getDatasetMeta(i); if(meta.hidden||ds.label==='실제') return; let li=-1; for(let j=ds.data.length-1;j>=0;j--){ if(ds.data[j]!==null){li=j;break;} } if(li===-1) return; const pt=meta.data[li]; if(pt){ ctx.fillStyle=ds.borderColor; ctx.font='bold 9px sans-serif'; ctx.textAlign='left'; ctx.fillText(`${ds.label==='기간달성'?'달성:':''}${ds.data[li]}%`,pt.x+4,pt.y+3); } }); } }] }));
+      }, [data, labels, color, targetValue, averageValue, hasGoal, goalDates, periodScore, maxY]);
+      return e('div', { className:'chart-container' }, e('canvas', { ref:canvasRef }));
+    });
+
+    const HabitItem = memo(({ habit, dates, onAction }) => {
+      const rangeCount = dates.filter(d => habit.checks[d]).length;
+      return e('div', { className:'flex flex-col' },
+        e('div', { className:'flex items-center justify-between min-h-[14px] mt-2' },
+          e('div', { className:'flex items-center gap-2 flex-1 min-w-0' },
+            e('div', { className:'text-[11px] font-black text-slate-700 truncate' }, habit.name),
+            e('button', { type:'button', onMouseDown:ev=>ev.preventDefault(), onClick:(ev)=>{ ev.preventDefault();ev.stopPropagation();onAction(habit.id,'EDIT_NAME'); }, className:'text-[8px] text-indigo-300 font-bold flex-shrink-0' }, '수정'),
+            e('button', { type:'button', onMouseDown:ev=>ev.preventDefault(), onClick:(ev)=>{ ev.preventDefault();ev.stopPropagation();onAction(habit.id,'DELETE'); }, className:'text-[8px] text-pink-300 font-bold flex-shrink-0' }, '지우기')
+          ),
+          e('div', { className:'text-[9px] font-black text-slate-800 flex-shrink-0' }, `${rangeCount}회 / ${habit.total||0}`)
+        ),
+        e('div', { className:'scroll-container no-scrollbar' },
+          [...dates].reverse().map(d =>
+            e('button', { key:d, type:'button', onMouseDown:ev=>ev.preventDefault(), onTouchStart:ev=>ev.stopPropagation(), onClick:(ev)=>{ ev.preventDefault();ev.stopPropagation();onAction(habit.id,d); }, className:`w-7 h-7 rounded-lg flex-shrink-0 chk-btn ${habit.checks[d]?'active':'bg-slate-100'}` },
+              habit.checks[d] && e('span', { className:'text-white text-[10px] font-bold' }, '✓'))
+          )
+        )
+      );
+    });
+
+    const NoteItem = memo(({ note, onToggle, onDelete, onEdit, nextInputRef }) => {
+      const inputRef = useRef(null);
+      return e('div', { className:`notebox-item${note.done?' done':''}` },
+        e('button', { type:'button', onMouseDown:ev=>ev.preventDefault(), onClick:()=>onToggle(note.id), className:`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center ${note.done?'bg-indigo-500 border-indigo-500':'border-slate-300'}` }, note.done && e('span', { className:'text-white text-[8px]' }, '✓')),
+        e('input', { ref: inputRef, type: 'text', defaultValue: note.text, onBlur: (ev) => { if (ev.target.value !== note.text) onEdit(note.id, ev.target.value); }, onKeyDown: (ev) => { if(ev.key==='Enter' && nextInputRef) nextInputRef.current?.focus(); }, className: 'flex-1 bg-transparent border-none outline-none text-sm font-semibold', style: { textDecoration: note.done?'line-through':'none', color: note.done?'#94a3b8':'#334155' } }),
+        e('button', { type:'button', onClick:()=>onDelete(note.id), className:'text-slate-200 text-xs px-1 flex-shrink-0' }, '✕')
+      );
+    });
+
+    const NoteBox = memo(({ notes, setNotes }) => {
+      const addInputRef = useRef(null); const [hasText, setHasText] = useState(false);
+      const addNote = useCallback(() => { const t = (addInputRef.current?.value || '').trim(); if (!t) return; setNotes(p => [...p, { id: Date.now(), text: t, done: false }]); if (addInputRef.current) addInputRef.current.value = ''; setHasText(false); }, [setNotes]);
+      const toggleDone = useCallback((id) => setNotes(p => p.map(n => n.id===id ? {...n, done:!n.done} : n)), [setNotes]);
+      const deleteNote = useCallback((id) => setNotes(p => p.filter(n => n.id!==id)), [setNotes]);
+      const editNote = useCallback((id, text) => setNotes(p => p.map(n => n.id===id ? {...n, text} : n)), [setNotes]);
+      return e('div', { className:'mb-8' },
+        e('div', { className:'flex justify-between items-center mb-3 px-2' }, e('h3', { className:'text-[11px] font-black text-slate-400 uppercase tracking-widest' }, '✏️ 생각 노트')),
+        e('div', { className:'notebox' },
+          notes.map(n => e(NoteItem, { key: n.id, note: n, onToggle: toggleDone, onDelete: deleteNote, onEdit: editNote, nextInputRef: addInputRef })),
+          e('div', { className:'notebox-add' },
+            e('div', { className:'w-4 h-4 rounded border-2 border-dashed border-slate-200 flex-shrink-0' }),
+            e('input', { ref: addInputRef, type: 'text', placeholder: '새 메모 추가...', onInput: (ev) => setHasText(ev.target.value.trim().length > 0), onKeyDown: (ev) => { if(ev.key==='Enter') addNote(); }, className: 'flex-1 bg-transparent border-none outline-none text-sm text-slate-500' }),
+            hasText && e('button', { type:'button', onClick:addNote, className:'text-indigo-500 font-black text-sm px-1' }, '+')
+          )
+        )
+      );
+    });
+
+    const GoalInputField = memo(({ value, disabled, placeholder, onChange, isTextarea, className }) => {
+      const ref = useRef(null);
+      useEffect(() => { if (ref.current && ref.current.value !== value) ref.current.value = value; }, [value, disabled]);
+      const handleBlur = useCallback((ev) => { if (ev.target.value !== value) onChange(ev.target.value); }, [value, onChange]);
+      if (disabled) return e(isTextarea ? 'textarea' : 'input', { className, disabled: true, value, readOnly: true });
+      return e(isTextarea ? 'textarea' : 'input', { ref, className, defaultValue: value, placeholder, onBlur: handleBlur });
+    });
+
+    const BottomBar = memo(({ themes, curTheme, onThemeChange, onAdd, onOpenModal }) => {
+      const textareaRef = useRef(null);
+      const handleAdd = useCallback(() => { const val = (textareaRef.current?.value || '').trim(); if (!val) return; onAdd(val); if (textareaRef.current) textareaRef.current.value = ''; }, [onAdd]);
+      const handleKeyDown = useCallback((ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); handleAdd(); } }, [handleAdd]);
+      const handleThemeChange = useCallback((ev) => { if (ev.target.value === 'ADD_NEW_THEME_ACTION') { onOpenModal('THEME_ADD', null, ''); } else { onThemeChange(ev.target.value); } }, [onThemeChange, onOpenModal]);
+      return e('div', { className:'fixed bottom-6 left-0 right-0 px-5 max-w-md mx-auto z-[8000]' },
+        e('div', { className:'bg-slate-900 p-2 rounded-[2rem] shadow-2xl flex items-center gap-2' },
+          e('select', { className:'theme-select-fixed text-[11px] font-black bg-slate-800 text-white px-2 py-3 rounded-2xl outline-none', value:curTheme, onChange:handleThemeChange },
+            e('option',{value:'',disabled:true},'테마 선택'),
+            themes.map(t=>e('option',{key:t,value:t},t)),
+            e('option',{value:'칠판'},'★ 칠판'),
+            e('option',{value:'ADD_NEW_THEME_ACTION',className:'text-indigo-400 font-bold'},'+ 테마 추가')
+          ),
+          e('textarea', { ref: textareaRef, className: 'flex-1 bg-transparent p-2 text-sm text-white outline-none resize-none pt-2 overflow-hidden', rows: 2, placeholder: '추가할 내용...', onKeyDown: handleKeyDown }),
+          e('button', { type:'button', onClick:handleAdd, className:'bg-indigo-500 text-white w-12 h-12 rounded-[1.2rem] font-black flex-shrink-0' }, '+')
+        )
+      );
+    });
+
+    const BoardInputBar = memo(({ onAdd }) => {
+      const textareaRef = useRef(null);
+      const handleAdd = useCallback(() => { const val = (textareaRef.current?.value || '').trim(); if (!val) return; onAdd(val); if (textareaRef.current) textareaRef.current.value = ''; }, [onAdd]);
+      return e('div', { className:'flex-1 flex items-center bg-slate-50 rounded-xl px-3 py-1 ml-2' },
+        e('textarea', { ref: textareaRef, className:'flex-1 bg-transparent text-sm outline-none font-bold text-slate-700 resize-none pt-1 overflow-hidden', rows:1, placeholder:'메모 입력...' }),
+        e('button', { type:'button', onClick:handleAdd, className:'text-indigo-600 font-black px-2' }, '+')
+      );
+    });
+
+    const DayRangeInputs = memo(({ pastDays, futureDays, onPastChange, onFutureChange }) => {
+      return e('div', { className:'flex flex-col gap-1 items-end' },
+        e('div', { className:'bg-white px-3 py-1.5 rounded-xl shadow-sm border border-slate-50 flex items-center gap-2' },
+          e('span', { className:'text-[9px] font-black text-slate-400 uppercase' }, '과거'),
+          e('input', { type: 'number', className: 'w-8 text-center font-bold text-indigo-600 outline-none text-sm', defaultValue: pastDays, onBlur: (ev) => onPastChange(Math.max(1, parseInt(ev.target.value)||1)), onChange: (ev) => onPastChange(Math.max(1, parseInt(ev.target.value)||1)) })
+        ),
+        e('div', { className:'bg-white px-3 py-1.5 rounded-xl shadow-sm border border-slate-50 flex items-center gap-2' },
+          e('span', { className:'text-[9px] font-black text-slate-400 uppercase' }, '미래'),
+          e('input', { type: 'number', className: 'w-8 text-center font-bold text-emerald-600 outline-none text-sm', defaultValue: futureDays, onBlur: (ev) => onFutureChange(Math.max(0, parseInt(ev.target.value)||0)), onChange: (ev) => onFutureChange(Math.max(0, parseInt(ev.target.value)||0)) })
+        )
+      );
+    });
+
+    const App = () => {
+      const [habits, setHabits] = useState(() => getInitialData('habits_final', []));
+      const [themes, setThemes] = useState(() => getInitialData('themes_final', []));
+      const [categories, setCategories] = useState(() => getInitialData('categories_v91', []));
+      const [pastDays, setPastDays] = useState(() => getInitialData('past_days_v1', 14));
+      const [futureDays, setFutureDays] = useState(() => getInitialData('future_days_v1', 0));
+      const [hiddenThemes, setHiddenThemes] = useState(() => getInitialData('hidden_themes', {}));
+      const [hiddenCategories, setHiddenCategories] = useState(() => getInitialData('hidden_categories_v1', {}));
+      const [hiddenFolderOpen, setHiddenFolderOpen] = useState(false);
+      const [hiddenCatFolderOpen, setHiddenCatFolderOpen] = useState(false);
+      const [todayStr, setTodayStr] = useState(getTodayStr());
+      const [goals, setGoals] = useState(() => getInitialData('goals_array_v1', [{ id: Date.now(), project:'', targetItems:[], reason:'', startDate:'', endDate:'', isEditing:false }]));
+      const [collapsedStates, setCollapsedStates] = useState(() => {
+        const saved = getInitialData('collapsed_states_v1', null);
+        if (saved) return saved;
+        const s = {};
+        const ci = (list) => { list.forEach(c => { s[c.id]=true; ci(c.subCategories||[]); }); };
+        getInitialData('goals_array_v1',[]).forEach(g => { s[g.id]=true; });
+        ci(getInitialData('categories_v91',[]));
+        getInitialData('themes_final',[]).forEach(t => { s[t]=true; });
+        return s;
+      });
+      const [memos, setMemos] = useState(() => getInitialData('memos_final', []));
+      const [notes, setNotes] = useState(() => getInitialData('notes_v1', []));
+
+      // FIXED BUG: Photo stickers now saved/loaded from localStorage with base64 images
+      const [photoStickers, setPhotoStickers] = useState(() => {
+        try {
+          const saved = localStorage.getItem('photo_stickers_v2');
+          return saved ? JSON.parse(saved) : [];
+        } catch(e) { return []; }
+      });
+      const [selectedStickerIdState, setSelectedStickerIdState] = useState(null);
+
+      // Theme checkbox mode
+      const [themeCheckboxSet, setThemeCheckboxSet] = useState(() => new Set(getInitialData('theme_checkbox_set_v1', [])));
+      const [themeCheckedToday, setThemeCheckedToday] = useState(() => {
+        const saved = getInitialData('theme_checked_today_v1', {});
+        const savedDate = localStorage.getItem('theme_checked_today_date_v1');
+        const today = getTodayStr();
+        if (savedDate !== today) return {};
+        return saved;
+      });
+
+      const [selectedMemoId, setSelectedMemoId] = useState(null);
+      const [boardMode, setBoardMode] = useState('cursor');
+      const [penColor, setPenColor] = useState('#ef4444');
+      const [penSize, setPenSize] = useState(5);
+      const [eraserSize, setEraserSize] = useState(20);
+      const [boardFullscreen, setBoardFullscreen] = useState(false);
+      // Hide global buttons in fullscreen
+      useEffect(() => {
+        const settingsBtn = document.getElementById('global-settings-btn');
+        const splashBtn = document.querySelector('button[onclick*="openSplashEditor"]');
+        if (boardFullscreen) {
+          if (settingsBtn) settingsBtn.style.display = 'none';
+          if (splashBtn) splashBtn.style.display = 'none';
+          document.body.style.overflow = 'hidden';
+        } else {
+          if (settingsBtn) settingsBtn.style.display = '';
+          if (splashBtn) splashBtn.style.display = '';
+          document.body.style.overflow = '';
+        }
+      }, [boardFullscreen]);
+      const [boardCollapsed, setBoardCollapsed] = useState(() => getInitialData('board_collapsed_v1', true));
+      const [boardTransform, setBoardTransform] = useState(() => getInitialData('board_transform_final', { x:0, y:0, s:10 }));
+      const [curTheme, setCurTheme] = useState('');
+      const [modalState, setModalState] = useState({ type:null, targetId:null, parentCategoryId:null });
+      const [analysisSelectedThemes, setAnalysisSelectedThemes] = useState(() => getInitialData('analysis_selected_themes_v1', null));
+      const [analysisSelectedCats, setAnalysisSelectedCats] = useState(() => getInitialData('analysis_selected_cats_v1', null));
+      const [priorityThemes, setPriorityThemes] = useState(() => new Set(getInitialData('priority_themes_v1', [])));
+      // FIXED: analysisPage now drives translateX properly
+      const [analysisPage, setAnalysisPage] = useState(0);
+      const [isLoggedIn, setIsLoggedIn] = useState(false);
+      const [syncStatus, setSyncStatusState] = useState('offline');
+      const [lastSyncTime, setLastSyncTime] = useState('');
+      const [catGraphOnlyExpanded, setCatGraphOnlyExpanded] = useState(false);
+      const [hiddenCategoryCharts, setHiddenCategoryCharts] = useState(() => getInitialData('hidden_cat_charts_v1', {}));
+
+      // NEW: Capture mode state
+      const [capturedMemoIds, setCapturedMemoIds] = useState(new Set());
+      const [isCaptureDrawing, setIsCaptureDrawing] = useState(false);
+      const captureStartRef = useRef(null);
+      const captureRectElRef = useRef(null);
+
+      const toggleCategoryChartHide = useCallback((catId) => { setHiddenCategoryCharts(prev => { const next = {...prev, [catId]: !prev[catId]}; localStorage.setItem('hidden_cat_charts_v1', JSON.stringify(next)); return next; }); }, []);
+
+      useEffect(() => { onSyncStatusChange((s) => { setSyncStatusState(s); if (s === 'synced') { const now = new Date(); setLastSyncTime(`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`); } }); }, []);
+
+      // FIX: auto-login using Firebase
+      useEffect(() => {
+        const checkAutoLogin = () => {
+          const savedToken = localStorage.getItem('g_access_token_cache');
+          const savedExpiry = localStorage.getItem('g_token_expiry');
+          if (savedToken && savedExpiry && Date.now() < parseInt(savedExpiry)) {
+            gAccessToken = savedToken;
+            setIsLoggedIn(true);
+            setSyncStatus('synced');
+          }
+        };
+        checkAutoLogin();
+      }, []);
+
+      // Settings modal wiring
+      useEffect(() => {
+        const btn = document.getElementById('global-settings-btn');
+        if (!btn) return;
+        const handler = () => {
+          const list = document.getElementById('settings-theme-list');
+          if (!list) return;
+          list.innerHTML = '';
+          themes.forEach(tName => {
+            const isChecked = themeCheckboxSet.has(tName);
+            const row = document.createElement('div');
+            row.style.cssText = `display:flex;align-items:center;gap:10px;padding:10px 12px;background:${isChecked?'#f3f0ff':'#f8faff'};border-radius:12px;cursor:pointer;border:1.5px solid ${isChecked?'#c4b5fd':'#e8eaff'};`;
+            row.innerHTML = `<div style="width:22px;height:22px;border-radius:50%;border:2px solid ${isChecked?'#8b5cf6':'#cbd5e1'};background:${isChecked?'#8b5cf6':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${isChecked?'<span style="color:white;font-size:11px;font-weight:900;">✓</span>':''}</div><span style="font-size:13px;font-weight:800;color:${isChecked?'#6d28d9':'#334155'};">${tName}</span><span style="font-size:10px;font-weight:700;color:${isChecked?'#8b5cf6':'#94a3b8'};margin-left:auto;background:${isChecked?'#ede9fe':'#f1f5f9'};padding:2px 8px;border-radius:999px;">${isChecked?'☐ 체크박스':'일반'}</span>`;
+            row.addEventListener('click', () => { setThemeCheckboxSet(prev => { const next = new Set(prev); if (next.has(tName)) next.delete(tName); else next.add(tName); localStorage.setItem('theme_checkbox_set_v1', JSON.stringify([...next])); return next; }); setTimeout(() => { btn.click(); }, 50); });
+            list.appendChild(row);
+          });
+          if (themes.length === 0) list.innerHTML = '<div style="text-align:center;color:#94a3b8;font-size:13px;font-weight:700;padding:20px;">테마가 없습니다</div>';
+          document.getElementById('settings-modal').classList.add('active');
+        };
+        btn.addEventListener('click', handler);
+        return () => btn.removeEventListener('click', handler);
+      }, [themes, themeCheckboxSet]);
+
+      // Photo upload handler - FIX: store base64 directly for persistence
+      useEffect(() => {
+        const input = document.getElementById('photo-upload-input');
+        if (!input) return;
+        const handler = (ev) => {
+          const files = Array.from(ev.target.files || []);
+          files.forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (re) => {
+              const id = Date.now() + Math.random();
+              const aw = boardAreaRef.current ? boardAreaRef.current.clientWidth : 300;
+              const ah = boardAreaRef.current ? boardAreaRef.current.clientHeight : 300;
+              const sx = (aw/2 - pendingBoardTransform.current.x) / pendingBoardTransform.current.s - 75;
+              const sy = (ah/2 - pendingBoardTransform.current.y) / pendingBoardTransform.current.s - 75;
+              setPhotoStickers(p => [...p, { id, src: re.target.result, x: sx, y: sy, w: 150, h: 150, locked: false }]);
+            };
+            reader.readAsDataURL(file);
+          });
+          input.value = '';
+        };
+        input.addEventListener('change', handler);
+        return () => input.removeEventListener('change', handler);
+      }, []);
+
+      // FIXED: Save photoStickers to localStorage whenever they change
+      useEffect(() => {
+        try {
+          localStorage.setItem('photo_stickers_v2', JSON.stringify(photoStickers));
+        } catch(e) {
+          console.warn('사진 저장 실패 (용량 초과 가능):', e);
+        }
+      }, [photoStickers]);
+
+      const getAllData = useCallback(() => ({
+        habits, themes, categories, memos, notes, pastDays, futureDays,
+        goals, boardTransform, hiddenThemes, hiddenCategories,
+        boardCollapsed, collapsedStates, priorityThemes: [...priorityThemes],
+        analysisSelectedThemes, analysisSelectedCats, themeCheckboxSet: [...themeCheckboxSet]
+      }), [habits, themes, categories, memos, notes, pastDays, futureDays, goals, boardTransform, hiddenThemes, hiddenCategories, boardCollapsed, collapsedStates, priorityThemes, analysisSelectedThemes, analysisSelectedCats, themeCheckboxSet]);
+
+      const applyDriveData = useCallback((data) => {
+        if (!data) return;
+        if (data.habits !== undefined) setHabits(data.habits);
+        if (data.themes !== undefined) setThemes(data.themes);
+        if (data.categories !== undefined) setCategories(data.categories);
+        if (data.memos !== undefined) setMemos(data.memos);
+        if (data.notes !== undefined) setNotes(data.notes);
+        if (data.pastDays !== undefined) setPastDays(data.pastDays);
+        if (data.futureDays !== undefined) setFutureDays(data.futureDays);
+        if (data.goals !== undefined) setGoals(data.goals);
+        if (data.boardTransform !== undefined) { setBoardTransform(data.boardTransform); pendingBoardTransform.current = {...data.boardTransform}; }
+        if (data.hiddenThemes !== undefined) setHiddenThemes(data.hiddenThemes);
+        if (data.hiddenCategories !== undefined) setHiddenCategories(data.hiddenCategories);
+        if (data.boardCollapsed !== undefined) setBoardCollapsed(data.boardCollapsed);
+        if (data.collapsedStates !== undefined) setCollapsedStates(data.collapsedStates);
+        if (data.priorityThemes !== undefined) setPriorityThemes(new Set(data.priorityThemes));
+        if (data.analysisSelectedThemes !== undefined) setAnalysisSelectedThemes(data.analysisSelectedThemes);
+        if (data.analysisSelectedCats !== undefined) setAnalysisSelectedCats(data.analysisSelectedCats);
+        if (data.themeCheckboxSet !== undefined) setThemeCheckboxSet(new Set(data.themeCheckboxSet));
+      }, []);
+
+      const handleLogin = useCallback(async () => {
+        try {
+          const token = await googleSignIn();
+          // Cache token for auto-login (1 hour)
+          localStorage.setItem('g_access_token_cache', token);
+          localStorage.setItem('g_token_expiry', String(Date.now() + 3600000));
+          setIsLoggedIn(true);
+          const driveData = await loadFromDrive();
+          if (driveData) { if (confirm('구글 드라이브에 저장된 데이터를 불러올까요?')) { applyDriveData(driveData); } }
+        } catch (err) { alert('구글 로그인에 실패했어요.'); console.error(err); }
+      }, [applyDriveData]);
+
+      const handleManualSync = useCallback(async () => { if (!gAccessToken) return; await saveToDrive(getAllData()); }, [getAllData]);
+      const handleLogout = useCallback(() => {
+        googleSignOut();
+        localStorage.removeItem('g_access_token_cache');
+        localStorage.removeItem('g_token_expiry');
+        setIsLoggedIn(false);
+      }, []);
+
+      const boardAreaRef = useRef(null); const boardContentRef = useRef(null); const canvasRef = useRef(null);
+      const lastPinchDist = useRef(null); const lastTouchPos = useRef({x:0,y:0});
+      const memoDragIdRef = useRef(null); const memoResizeIdRef = useRef(null); const resizeDirRef = useRef(null);
+      const memoOffsetRef = useRef({x:0,y:0}); const isPanningRef = useRef(false); const isDrawingRef = useRef(false);
+      const domMemoRefs = useRef(new Map()); const memoPosTemp = useRef(new Map()); const memoDimTemp = useRef(new Map());
+      const pendingBoardTransform = useRef(getInitialData('board_transform_final', { x:0, y:0, s:10 }));
+      const rafPending = useRef(null);
+      const offscreenCanvasRef = useRef(null); const drawFlushRef = useRef(null);
+      // FIXED: Analysis swipe state
+      const swipeStartX = useRef(null); const swipeStartY = useRef(null); const swipeStartTime = useRef(null); const swipeDeltaX = useRef(0);
+      const analysisPanelInnerRef = useRef(null);
+
+      // Photo sticker drag refs
+      const stickerDragIdRef = useRef(null); const stickerOffsetRef = useRef({x:0,y:0});
+      const stickerResizeIdRef = useRef(null); const stickerResizeStartRef = useRef({mx:0,my:0,w:0,h:0});
+      const domStickerRefs = useRef(new Map()); const stickerPosTemp = useRef(new Map()); const stickerDimTemp = useRef(new Map());
+
+      // Capture mode refs
+      const captureGroupDragRef = useRef(null); // { startX, startY, initialPositions }
+
+      useEffect(() => { const t=setInterval(()=>{ const n=getTodayStr(); if(n!==todayStr) setTodayStr(n); },60000); return ()=>clearInterval(t); }, [todayStr]);
+
+      const saveTimer = useRef(null); const driveTimer = useRef(null);
+      useEffect(() => {
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => {
+          try {
+            localStorage.setItem('habits_final', JSON.stringify(habits));
+            localStorage.setItem('themes_final', JSON.stringify(themes));
+            localStorage.setItem('categories_v91', JSON.stringify(categories));
+            localStorage.setItem('memos_final', JSON.stringify(memos));
+            localStorage.setItem('notes_v1', JSON.stringify(notes));
+            localStorage.setItem('past_days_v1', JSON.stringify(pastDays));
+            localStorage.setItem('future_days_v1', JSON.stringify(futureDays));
+            localStorage.setItem('goals_array_v1', JSON.stringify(goals));
+            localStorage.setItem('board_transform_final', JSON.stringify(boardTransform));
+            localStorage.setItem('hidden_themes', JSON.stringify(hiddenThemes));
+            localStorage.setItem('hidden_categories_v1', JSON.stringify(hiddenCategories));
+            localStorage.setItem('board_collapsed_v1', JSON.stringify(boardCollapsed));
+            localStorage.setItem('collapsed_states_v1', JSON.stringify(collapsedStates));
+            localStorage.setItem('priority_themes_v1', JSON.stringify([...priorityThemes]));
+            localStorage.setItem('theme_checkbox_set_v1', JSON.stringify([...themeCheckboxSet]));
+            if (analysisSelectedThemes!==null) localStorage.setItem('analysis_selected_themes_v1', JSON.stringify(analysisSelectedThemes));
+            if (analysisSelectedCats!==null) localStorage.setItem('analysis_selected_cats_v1', JSON.stringify(analysisSelectedCats));
+          } catch(err) { console.warn('save error',err); }
+        }, 700);
+        if (isLoggedIn && gAccessToken) { if (driveTimer.current) clearTimeout(driveTimer.current); driveTimer.current = setTimeout(() => { saveToDrive(getAllData()); }, 3000); }
+        return () => { clearTimeout(saveTimer.current); clearTimeout(driveTimer.current); };
+      }, [habits, themes, categories, memos, notes, pastDays, futureDays, goals, boardTransform, hiddenThemes, hiddenCategories, boardCollapsed, collapsedStates, analysisSelectedThemes, analysisSelectedCats, priorityThemes, themeCheckboxSet, isLoggedIn, getAllData]);
+
+      useEffect(() => {
+        localStorage.setItem('theme_checked_today_v1', JSON.stringify(themeCheckedToday));
+        localStorage.setItem('theme_checked_today_date_v1', getTodayStr());
+      }, [themeCheckedToday]);
+
+      useEffect(() => {
+        pendingBoardTransform.current = {...boardTransform};
+        if (boardContentRef.current) { boardContentRef.current.style.transform = `translate(${boardTransform.x}px,${boardTransform.y}px) scale(${boardTransform.s})`; }
+      }, [boardTransform]);
+
+      useEffect(() => {
+        offscreenCanvasRef.current = document.createElement('canvas');
+        offscreenCanvasRef.current.width = 20000; offscreenCanvasRef.current.height = 20000;
+        const canvas = canvasRef.current;
+        if (canvas && canvas.getContext) { const ctx=canvas.getContext('2d'); const si=localStorage.getItem('board_drawing_v3'); if(si){ const img=new Image(); img.src=si; img.onload=()=>{ ctx.drawImage(img,0,0); if(offscreenCanvasRef.current) offscreenCanvasRef.current.getContext('2d').drawImage(img,0,0); }; } }
+      }, []);
+
+      const commitMemoTempToState = useCallback(() => {
+        if (memoPosTemp.current.size === 0 && memoDimTemp.current.size === 0) return;
+        setMemos(prev => prev.map(m => { const pos = memoPosTemp.current.get(m.id); const dim = memoDimTemp.current.get(m.id); return { ...m, x: pos ? pos.x : m.x, y: pos ? pos.y : m.y, w: dim ? dim.w : m.w, h: dim ? dim.h : m.h }; }));
+        memoPosTemp.current.clear(); memoDimTemp.current.clear();
+      }, []);
+
+      const commitStickerTempToState = useCallback(() => {
+        if (stickerPosTemp.current.size === 0 && stickerDimTemp.current.size === 0) return;
+        setPhotoStickers(prev => prev.map(s => { const pos = stickerPosTemp.current.get(s.id); const dim = stickerDimTemp.current.get(s.id); return { ...s, x: pos ? pos.x : s.x, y: pos ? pos.y : s.y, w: dim ? dim.w : s.w, h: dim ? dim.h : s.h }; }));
+        stickerPosTemp.current.clear(); stickerDimTemp.current.clear();
+      }, []);
+
+      const memosRef = useRef(memos);
+      useEffect(() => { memosRef.current = memos; }, [memos]);
+      const photoStickersRef = useRef(photoStickers);
+      useEffect(() => { photoStickersRef.current = photoStickers; }, [photoStickers]);
+      const capturedMemoIdsRef = useRef(capturedMemoIds);
+      useEffect(() => { capturedMemoIdsRef.current = capturedMemoIds; }, [capturedMemoIds]);
+
+      // ── Global pointer events ──
+      useEffect(() => {
+        const handleDocPointerMove = (ev) => {
+          // Capture rect drawing
+          if (isCaptureDrawing && captureStartRef.current) {
+            ev.preventDefault();
+            const rect = boardAreaRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const x1 = captureStartRef.current.clientX; const y1 = captureStartRef.current.clientY;
+            const x2 = ev.clientX; const y2 = ev.clientY;
+            const rx = Math.min(x1,x2)-rect.left; const ry = Math.min(y1,y2)-rect.top;
+            const rw = Math.abs(x2-x1); const rh = Math.abs(y2-y1);
+            const el = document.getElementById('capture-rect');
+            if (el) { el.style.display='block'; el.style.left=rx+'px'; el.style.top=ry+'px'; el.style.width=rw+'px'; el.style.height=rh+'px'; }
+            return;
+          }
+
+          // Capture group drag
+          if (captureGroupDragRef.current) {
+            ev.preventDefault();
+            const dx = (ev.clientX - captureGroupDragRef.current.startX) / pendingBoardTransform.current.s;
+            const dy = (ev.clientY - captureGroupDragRef.current.startY) / pendingBoardTransform.current.s;
+            capturedMemoIdsRef.current.forEach(id => {
+              const init = captureGroupDragRef.current.initialPositions.get(id);
+              if (!init) return;
+              const nx = init.x + dx; const ny = init.y + dy;
+              memoPosTemp.current.set(id, { x: nx, y: ny });
+              const el = domMemoRefs.current.get(id);
+              if (el) { el.style.left = `${nx}px`; el.style.top = `${ny}px`; }
+            });
+            return;
+          }
+
+          // Sticker drag
+          if (stickerDragIdRef.current !== null) {
+            ev.preventDefault();
+            const id = stickerDragIdRef.current;
+            const rect = boardAreaRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const px = (ev.clientX - rect.left - pendingBoardTransform.current.x) / pendingBoardTransform.current.s - stickerOffsetRef.current.x;
+            const py = (ev.clientY - rect.top - pendingBoardTransform.current.y) / pendingBoardTransform.current.s - stickerOffsetRef.current.y;
+            stickerPosTemp.current.set(id, { x: px, y: py });
+            const el = domStickerRefs.current.get(id);
+            if (el) { el.style.left = `${px}px`; el.style.top = `${py}px`; }
+            return;
+          }
+          // Sticker resize
+          if (stickerResizeIdRef.current !== null) {
+            ev.preventDefault();
+            const id = stickerResizeIdRef.current;
+            const { mx, my, w, h } = stickerResizeStartRef.current;
+            const dx = (ev.clientX - mx) / pendingBoardTransform.current.s;
+            const dy = (ev.clientY - my) / pendingBoardTransform.current.s;
+            const nw = Math.max(40, w + dx); const nh = Math.max(40, h + dy);
+            stickerDimTemp.current.set(id, { w: nw, h: nh });
+            const el = domStickerRefs.current.get(id);
+            if (el) { el.style.width = `${nw}px`; el.style.height = `${nh}px`; }
+            return;
+          }
+          if (memoDragIdRef.current !== null) {
+            ev.preventDefault();
+            const id = memoDragIdRef.current;
+            const rect = boardAreaRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const px = (ev.clientX - rect.left - pendingBoardTransform.current.x) / pendingBoardTransform.current.s - memoOffsetRef.current.x;
+            const py = (ev.clientY - rect.top - pendingBoardTransform.current.y) / pendingBoardTransform.current.s - memoOffsetRef.current.y;
+            memoPosTemp.current.set(id, { x: px, y: py });
+            const el = domMemoRefs.current.get(id);
+            if (el) { el.style.left = `${px}px`; el.style.top = `${py}px`; }
+            return;
+          }
+          if (memoResizeIdRef.current !== null) {
+            ev.preventDefault();
+            const id = memoResizeIdRef.current;
+            const rect = boardAreaRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const px = (ev.clientX - rect.left - pendingBoardTransform.current.x) / pendingBoardTransform.current.s;
+            const py = (ev.clientY - rect.top - pendingBoardTransform.current.y) / pendingBoardTransform.current.s;
+            const m = memosRef.current.find(mm => mm.id === id);
+            if (!m) return;
+            if (resizeDirRef.current === 'h') { const nw=Math.max(50,px-m.x); memoDimTemp.current.set(id,{w:nw,h:memoDimTemp.current.get(id)?.h||m.h}); const el=domMemoRefs.current.get(id); if(el)el.style.width=`${nw}px`; }
+            else if (resizeDirRef.current === 'v') { const nh=Math.max(30,py-m.y); memoDimTemp.current.set(id,{w:memoDimTemp.current.get(id)?.w||m.w,h:nh}); const el=domMemoRefs.current.get(id); if(el)el.style.height=`${nh}px`; }
+            return;
+          }
+          if (isPanningRef.current) {
+            const dx = ev.clientX - lastTouchPos.current.x; const dy = ev.clientY - lastTouchPos.current.y;
+            pendingBoardTransform.current.x += dx; pendingBoardTransform.current.y += dy;
+            lastTouchPos.current = { x: ev.clientX, y: ev.clientY };
+            if (!rafPending.current) { rafPending.current = requestAnimationFrame(() => { if(boardContentRef.current) boardContentRef.current.style.transform=`translate(${pendingBoardTransform.current.x}px,${pendingBoardTransform.current.y}px) scale(${pendingBoardTransform.current.s})`; rafPending.current=null; }); }
+          }
+        };
+
+        const handleDocPointerUp = (ev) => {
+          // Finish capture drawing
+          if (isCaptureDrawing && captureStartRef.current) {
+            const rectEl = document.getElementById('capture-rect');
+            if (rectEl) rectEl.style.display = 'none';
+            const rect = boardAreaRef.current?.getBoundingClientRect();
+            if (rect) {
+              const x1c = captureStartRef.current.clientX; const y1c = captureStartRef.current.clientY;
+              const x2c = ev.clientX; const y2c = ev.clientY;
+              // Convert screen coords to board content coords
+              const bx1 = (Math.min(x1c,x2c) - rect.left - pendingBoardTransform.current.x) / pendingBoardTransform.current.s;
+              const by1 = (Math.min(y1c,y2c) - rect.top - pendingBoardTransform.current.y) / pendingBoardTransform.current.s;
+              const bx2 = (Math.max(x1c,x2c) - rect.left - pendingBoardTransform.current.x) / pendingBoardTransform.current.s;
+              const by2 = (Math.max(y1c,y2c) - rect.top - pendingBoardTransform.current.y) / pendingBoardTransform.current.s;
+              const captured = new Set();
+              memosRef.current.forEach(m => {
+                const mw = m.w || 150; const mh = m.h || 80;
+                if (m.x >= bx1 && m.y >= by1 && m.x + mw <= bx2 && m.y + mh <= by2) {
+                  captured.add(m.id);
+                }
+              });
+              setCapturedMemoIds(captured);
+            }
+            captureStartRef.current = null;
+            return;
+          }
+          // Finish capture group drag
+          if (captureGroupDragRef.current) {
+            captureGroupDragRef.current = null;
+            commitMemoTempToState();
+            return;
+          }
+          if (stickerDragIdRef.current !== null || stickerResizeIdRef.current !== null) { stickerDragIdRef.current = null; stickerResizeIdRef.current = null; commitStickerTempToState(); }
+          if (memoDragIdRef.current !== null || memoResizeIdRef.current !== null) { memoDragIdRef.current = null; memoResizeIdRef.current = null; resizeDirRef.current = null; commitMemoTempToState(); }
+          if (isPanningRef.current) { isPanningRef.current = false; setBoardTransform({ ...pendingBoardTransform.current }); }
+        };
+
+        document.addEventListener('pointermove', handleDocPointerMove, { passive: false });
+        document.addEventListener('pointerup', handleDocPointerUp);
+        document.addEventListener('pointercancel', handleDocPointerUp);
+        return () => { document.removeEventListener('pointermove', handleDocPointerMove); document.removeEventListener('pointerup', handleDocPointerUp); document.removeEventListener('pointercancel', handleDocPointerUp); };
+      }, [isCaptureDrawing, commitMemoTempToState, commitStickerTempToState]);
+
+      const dates = useMemo(() => {
+        const arr=[]; for(let i=-(pastDays-1);i<=futureDays;i++){ const d=new Date(todayStr); d.setDate(d.getDate()+i); arr.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`); } return arr;
+      }, [pastDays, futureDays, todayStr]);
+
+      const getThemeScoreForDate = useCallback((tName, d) => {
+        if (themeCheckedToday[tName] && d === todayStr) return 100;
+        const th = habits.filter(h => h.theme === tName); if (!th.length) return 0;
+        return Math.round((th.filter(h => h.checks[d]).length / th.length) * 100);
+      }, [themeCheckedToday, todayStr, habits]);
+
+      const themeAnalysis = useMemo(() => themes.map(t => { if (!dates.length) return {name:t,score:0}; const score = Math.round(dates.reduce((a,d) => a + getThemeScoreForDate(t,d), 0) / dates.length); return {name:t, score}; }), [themes, dates, getThemeScoreForDate]);
+
+      const visibleThemesForAnalysis = useMemo(() => { const nh = themes.filter(t => !hiddenThemes[t]); if (!analysisSelectedThemes) return nh; return nh.filter(t => analysisSelectedThemes.includes(t)); }, [themes, hiddenThemes, analysisSelectedThemes]);
+      const getCategoryThemes = useCallback((cat) => { const collect = (c) => { const all=[...(c.themes||[])]; (c.subCategories||[]).forEach(sub=>collect(sub).forEach(t=>all.push(t))); return [...new Set(all)]; }; return collect(cat); }, []);
+      const cleanCategoryThemes = useCallback((currentThemes, cats) => { const tSet = new Set(currentThemes); const clean = (list) => list.map(c => ({ ...c, themes: (c.themes||[]).filter(t=>tSet.has(t)), subCategories: clean(c.subCategories||[]) })); return clean(cats); }, []);
+      useEffect(() => { setCategories(prev => cleanCategoryThemes(themes, prev)); }, [themes, cleanCategoryThemes]);
+      const getCategoryDailyScores = useCallback((cat) => { const catThemes = getCategoryThemes(cat); return dates.map(d => { if (!catThemes.length) return 0; return catThemes.reduce((acc, tName) => acc + getThemeScoreForDate(tName, d), 0); }); }, [dates, getCategoryThemes, getThemeScoreForDate]);
+      const allCatsFlat = useMemo(() => { const result = []; const collect = (list) => list.forEach(c => { result.push(c); collect(c.subCategories||[]); }); collect(categories); return result; }, [categories]);
+      const visibleCatsForAnalysis = useMemo(() => { const nonHidden = allCatsFlat.filter(c => !hiddenCategories[c.id] && getCategoryThemes(c).length > 0); if (!analysisSelectedCats) return nonHidden; return nonHidden.filter(c => analysisSelectedCats.includes(c.id)); }, [allCatsFlat, hiddenCategories, analysisSelectedCats, getCategoryThemes]);
+
+      const updateCategoryRecursive = (list, targetId, updateFn) => list.map(cat => { if(cat.id===targetId) return updateFn(cat); if(cat.subCategories) return {...cat,subCategories:updateCategoryRecursive(cat.subCategories,targetId,updateFn)}; return cat; });
+      const extractCategory = (list, targetId) => { let extracted=null; const remove=(arr)=>{ const res=[]; for(const cat of arr){ if(cat.id===targetId){extracted=cat;}else{res.push({...cat,subCategories:remove(cat.subCategories||[])});} } return res; }; return {newList:remove(list),extracted}; };
+      const removeThemeFromAllCategories = (list, tName) => list.map(cat => ({ ...cat, themes:(cat.themes||[]).filter(t=>t!==tName), subCategories:removeThemeFromAllCategories(cat.subCategories||[],tName) }));
+      const getGoalDates = (startDate, endDate) => { const s=new Date(startDate),en=new Date(endDate); if(isNaN(s)||isNaN(en)||s>en) return []; let c=new Date(s);const arr=[]; while(c<=en){ arr.push(`${c.getFullYear()}-${String(c.getMonth()+1).padStart(2,'0')}-${String(c.getDate()).padStart(2,'0')}`); c.setDate(c.getDate()+1); } return arr; };
+      const calculateGoalProgress = (goalObj) => { const gDates=getGoalDates(goalObj.startDate,goalObj.endDate); if(!goalObj.targetItems.length||!gDates.length) return 0; let cur=0,tar=0; goalObj.targetItems.forEach(item => { if(item.type==='category'){ const ct=item.catThemes||[]; if(!ct.length) return; const ms=ct.length*100; const ach=ct.reduce((a,tN)=>{ const th=habits.filter(h=>h.theme===tN); if(!th.length)return a; return a+gDates.reduce((da,d)=>da+Math.round((th.filter(h=>h.checks[d]).length/th.length)*100),0); },0); cur+=(ach/gDates.length/ms)*100; tar+=item.target; } else { const th=habits.filter(h=>h.theme===item.theme); if(!th.length) return; const c=th.reduce((a,h)=>a+gDates.filter(d=>h.checks[d]).length,0); cur+=(c/(th.length*gDates.length))*100; tar+=item.target; } }); return tar>0?(cur/tar)*100:0; };
+      const getDayDiffText = (s, t) => { if(!s||!t) return ''; const d1=new Date(s),d2=new Date(t); if(isNaN(d1)||isNaN(d2)) return ''; const dd=Math.ceil((d2-d1)/(1000*60*60*24))+1; return dd>0?`${dd}일차`:''; };
+      const flatCategoryList = useMemo(() => { const res=[]; const col=(list,d)=>list.forEach(c=>{ res.push({id:c.id,name:'　'.repeat(d)+c.name,catThemes:getCategoryThemes(c)}); col(c.subCategories||[],d+1); }); col(categories,0); return res; }, [categories, getCategoryThemes]);
+
+      const addNewGoal = useCallback(() => setGoals(p=>[...p,{id:Date.now(),project:'',targetItems:[],reason:'',startDate:'',endDate:'',isEditing:true}]), []);
+      const updateGoal = useCallback((id,fields) => setGoals(p=>p.map(g=>g.id===id?{...g,...fields}:g)), []);
+      const deleteGoal = useCallback((id) => { if(confirm('삭제할까요?')) setGoals(p=>p.filter(g=>g.id!==id)); }, []);
+      const toggleGoalEditing = useCallback((id) => setGoals(p=>p.map(g=>g.id===id?{...g,isEditing:!g.isEditing}:g)), []);
+      const toggleThemeHide = useCallback((tName) => setHiddenThemes(prev=>({...prev,[tName]:!prev[tName]})), []);
+      const toggleCategoryHide = useCallback((catId) => setHiddenCategories(prev=>({...prev,[catId]:!prev[catId]})), []);
+      const toggleCollapse = useCallback((id) => setCollapsedStates(p=>({...p,[id]:!p[id]})), []);
+      const toggleCollapseCategory = useCallback((catId, catObj) => { setCollapsedStates(p => { const wasCollapsed = p[catId]; if (wasCollapsed) { const newState = { ...p, [catId]: false }; const collapseCharts = (c) => { newState['cat_chart_' + c.id] = true; (c.themes || []).forEach(tName => { newState[tName] = true; }); (c.subCategories || []).forEach(sub => collapseCharts(sub)); }; if (catObj) collapseCharts(catObj); return newState; } return { ...p, [catId]: true }; }); }, []);
+      const togglePriority = useCallback((tName) => { setPriorityThemes(prev => { const next=new Set(prev); if(next.has(tName)) next.delete(tName); else next.add(tName); return next; }); setThemes(prev => { const without=prev.filter(t=>t!==tName); const np=new Set(priorityThemes); if(np.has(tName)){ np.delete(tName); return [...without,tName]; } else { np.add(tName); return [tName,...without]; } }); }, [priorityThemes]);
+
+      const getCanvasPos = useCallback((ev) => { const rect=boardAreaRef.current.getBoundingClientRect(); const cx=ev.clientX!==undefined?ev.clientX:ev.touches[0].clientX; const cy=ev.clientY!==undefined?ev.clientY:ev.touches[0].clientY; return {x:(cx-rect.left-pendingBoardTransform.current.x)/pendingBoardTransform.current.s,y:(cy-rect.top-pendingBoardTransform.current.y)/pendingBoardTransform.current.s}; }, []);
+
+      const handleAdd = useCallback((val) => {
+        if (!val) return;
+        if(curTheme==='칠판'||(boardFullscreen&&!boardCollapsed)){ const aw=boardAreaRef.current.clientWidth,ah=boardAreaRef.current.clientHeight; const sx=(aw/2-pendingBoardTransform.current.x)/pendingBoardTransform.current.s-75,sy=(ah/2-pendingBoardTransform.current.y)/pendingBoardTransform.current.s-40; setMemos(p=>[...p,{id:Date.now(),text:val,x:sx,y:sy,w:150,h:80,locked:false}]); }
+        else if(curTheme&&themes.includes(curTheme)){ setHabits(p=>[...p,{id:Date.now(),name:val,theme:curTheme,checks:{},total:0}]); }
+        else if(!themes.includes(val)){ setThemes(p=>[...p,val]); setCurTheme(val); }
+      }, [curTheme, themes, boardFullscreen, boardCollapsed]);
+
+      const applyPendingTransformToDOM = useCallback(() => { if (!boardContentRef.current) return; boardContentRef.current.style.transform = `translate(${pendingBoardTransform.current.x}px,${pendingBoardTransform.current.y}px) scale(${pendingBoardTransform.current.s})`; }, []);
+
+      const handleBoardPointerDown = useCallback((ev) => {
+        if (boardMode === 'capture') {
+          // Start capture rect draw
+          captureStartRef.current = { clientX: ev.clientX, clientY: ev.clientY };
+          setIsCaptureDrawing(true);
+          return;
+        }
+        if (boardMode !== 'cursor' || memoDragIdRef.current !== null || memoResizeIdRef.current !== null) return;
+        if (stickerDragIdRef.current !== null || stickerResizeIdRef.current !== null) return;
+        isPanningRef.current = true;
+        lastTouchPos.current = { x: ev.clientX, y: ev.clientY };
+      }, [boardMode]);
+
+      const handleBoardPointerUp = useCallback((ev) => {
+        if (isCaptureDrawing) {
+          setIsCaptureDrawing(false);
+        }
+      }, [isCaptureDrawing]);
+
+      const handleBoardTouch = useCallback((ev) => { if(boardMode!=='cursor'||memoDragIdRef.current!==null||memoResizeIdRef.current!==null) return; if(ev.touches.length===2){ const t1=ev.touches[0],t2=ev.touches[1]; const dist=Math.hypot(t1.pageX-t2.pageX,t1.pageY-t2.pageY); const mx=(t1.clientX+t2.clientX)/2,my=(t1.clientY+t2.clientY)/2; const rect=boardAreaRef.current.getBoundingClientRect(); const lmx=mx-rect.left,lmy=my-rect.top; if(lastPinchDist.current!==null){ const delta=dist/lastPinchDist.current; const ns=Math.min(Math.max(pendingBoardTransform.current.s*delta,0.1),10); const Px=(lmx-pendingBoardTransform.current.x)/pendingBoardTransform.current.s; const Py=(lmy-pendingBoardTransform.current.y)/pendingBoardTransform.current.s; pendingBoardTransform.current={x:lmx-Px*ns,y:lmy-Py*ns,s:ns}; if(!rafPending.current){rafPending.current=requestAnimationFrame(()=>{applyPendingTransformToDOM();rafPending.current=null;});} } lastPinchDist.current=dist; } }, [boardMode, applyPendingTransformToDOM]);
+
+      const handleMemoDown = useCallback((ev, memo) => {
+        ev.stopPropagation(); setSelectedMemoId(memo.id);
+        // If capture mode and memo is captured → start group drag
+        if (boardMode === 'capture' && capturedMemoIdsRef.current.has(memo.id) && capturedMemoIdsRef.current.size > 0) {
+          const initialPositions = new Map();
+          memosRef.current.forEach(m => { if (capturedMemoIdsRef.current.has(m.id)) { const pos = memoPosTemp.current.get(m.id); initialPositions.set(m.id, { x: pos ? pos.x : m.x, y: pos ? pos.y : m.y }); } });
+          captureGroupDragRef.current = { startX: ev.clientX, startY: ev.clientY, initialPositions };
+          return;
+        }
+        if (boardMode !== 'cursor' || memo.locked) return;
+        const rect = ev.currentTarget.getBoundingClientRect();
+        memoOffsetRef.current = { x:(ev.clientX-rect.left)/pendingBoardTransform.current.s, y:(ev.clientY-rect.top)/pendingBoardTransform.current.s };
+        memoDragIdRef.current = memo.id;
+      }, [boardMode]);
+
+      // Photo sticker handlers
+      const handleStickerDown = useCallback((ev, sticker) => {
+        ev.stopPropagation();
+        setSelectedStickerIdState(sticker.id);
+        if (boardMode !== 'cursor' || sticker.locked) return;
+        const rect = ev.currentTarget.getBoundingClientRect();
+        stickerOffsetRef.current = { x:(ev.clientX-rect.left)/pendingBoardTransform.current.s, y:(ev.clientY-rect.top)/pendingBoardTransform.current.s };
+        stickerDragIdRef.current = sticker.id;
+      }, [boardMode]);
+
+      const handleStickerResizeDown = useCallback((ev, sticker) => {
+        ev.stopPropagation();
+        stickerResizeIdRef.current = sticker.id;
+        stickerResizeStartRef.current = { mx: ev.clientX, my: ev.clientY, w: sticker.w, h: sticker.h };
+      }, []);
+
+      // FIXED: Drawing is now properly smooth using continuous path
+      // startDrawing just begins the path
+      const startDrawing = useCallback((ev) => {
+        if (boardMode === 'cursor' || boardMode === 'capture') return;
+        ev.preventDefault();
+        const oc = offscreenCanvasRef.current.getContext('2d');
+        const pos = getCanvasPos(ev);
+        oc.beginPath(); oc.moveTo(pos.x, pos.y);
+        oc.lineCap = 'round'; oc.lineJoin = 'round';
+        if (boardMode === 'eraser') { oc.globalCompositeOperation = 'destination-out'; oc.lineWidth = eraserSize; }
+        else { oc.globalCompositeOperation = 'source-over'; oc.strokeStyle = penColor; oc.lineWidth = penSize; }
+        isDrawingRef.current = true;
+      }, [boardMode, eraserSize, penColor, penSize, getCanvasPos]);
+
+      // FIXED: draw uses lineTo continuously - no gap between points
+      const draw = useCallback((ev) => {
+        if (!isDrawingRef.current) return;
+        ev.preventDefault();
+        const oc = offscreenCanvasRef.current.getContext('2d');
+        const pos = getCanvasPos(ev);
+        // Continue the existing path (no beginPath - this is the key fix!)
+        oc.lineTo(pos.x, pos.y);
+        oc.stroke();
+        // Move to new position to continue the path
+        oc.beginPath();
+        oc.moveTo(pos.x, pos.y);
+        // Reapply settings after beginPath
+        oc.lineCap = 'round'; oc.lineJoin = 'round';
+        if (boardMode === 'eraser') { oc.globalCompositeOperation = 'destination-out'; oc.lineWidth = eraserSize; }
+        else { oc.globalCompositeOperation = 'source-over'; oc.strokeStyle = penColor; oc.lineWidth = penSize; }
+        // Flush to visible canvas via RAF for smooth rendering
+        if (!drawFlushRef.current) { drawFlushRef.current = requestAnimationFrame(() => { drawFlushRef.current = null; if (!canvasRef.current || !offscreenCanvasRef.current) return; const ctx = canvasRef.current.getContext('2d'); ctx.clearRect(0, 0, 20000, 20000); ctx.drawImage(offscreenCanvasRef.current, 0, 0); }); }
+      }, [boardMode, eraserSize, penColor, penSize, getCanvasPos]);
+
+      const stopDrawing = useCallback(() => {
+        if (isDrawingRef.current) {
+          isDrawingRef.current = false;
+          if (drawFlushRef.current) { cancelAnimationFrame(drawFlushRef.current); drawFlushRef.current = null; }
+          if (canvasRef.current && offscreenCanvasRef.current) { const ctx = canvasRef.current.getContext('2d'); ctx.clearRect(0, 0, 20000, 20000); ctx.drawImage(offscreenCanvasRef.current, 0, 0); }
+          try { localStorage.setItem('board_drawing_v3', canvasRef.current.toDataURL()); } catch(err) { console.warn(err); }
+        }
+      }, []);
+
+      const openModal = useCallback((type, targetId, val, parentId=null) => {
+        setModalState({type,targetId,parentCategoryId:parentId});
+        const te=document.getElementById('modal-title');
+        if(type==='ADD_ROOT_CATEGORY') te.innerText='최상위 카테고리 추가';
+        else if(type==='ADD_SUB_CATEGORY') te.innerText='하위 카테고리 추가';
+        else if(type==='CATEGORY_RENAME') te.innerText='카테고리 이름 수정';
+        else if(type==='THEME_ADD') te.innerText='새 테마 추가';
+        else if(type.includes('THEME')) te.innerText='테마 수정';
+        else te.innerText='수정';
+        document.getElementById('common-input').value=val||'';
+        document.getElementById('external-modal').classList.add('active');
+      }, []);
+
+      const handleModalSubmit = useCallback(() => {
+        const val=document.getElementById('common-input').value.trim(); if(!val) return;
+        const {type,targetId,parentCategoryId}=modalState;
+        if(type==='ADD_ROOT_CATEGORY') setCategories(p=>[...p,{id:Date.now(),name:val,subCategories:[],themes:[]}]);
+        else if(type==='ADD_SUB_CATEGORY') setCategories(p=>updateCategoryRecursive(p,parentCategoryId,c=>({...c,subCategories:[...c.subCategories,{id:Date.now(),name:val,subCategories:[],themes:[]}]})));
+        else if(type==='CATEGORY_RENAME') setCategories(p=>updateCategoryRecursive(p,targetId,c=>({...c,name:val})));
+        else if(type==='THEME_EDIT'){setThemes(p=>p.map(t=>t===targetId?val:t));setHabits(p=>p.map(h=>h.theme===targetId?{...h,theme:val}:h));if(curTheme===targetId)setCurTheme(val);}
+        else if(type==='HABIT_EDIT') setHabits(p=>p.map(h=>h.id===targetId?{...h,name:val}:h));
+        else if(type==='MEMO_EDIT') setMemos(p=>p.map(m=>m.id===targetId?{...m,text:val}:m));
+        else if(type==='THEME_ADD'){setThemes(p=>[...p,val]);setCurTheme(val);}
+        window.closeModal();
+      }, [modalState, curTheme]);
+
+      useEffect(() => { document.getElementById('modal-submit-btn').onclick=handleModalSubmit; }, [handleModalSubmit]);
+
+      const handleHabitAction = useCallback((hid, act) => {
+        if(act==='DELETE'){if(confirm('삭제할까요?'))setHabits(h=>h.filter(x=>x.id!==hid));}
+        else if(act==='EDIT_NAME'){const h=habits.find(x=>x.id===hid);openModal('HABIT_EDIT',hid,h?h.name:'');}
+        else{setHabits(prev=>prev.map(x=>x.id===hid?{...x,checks:{...x.checks,[act]:!x.checks[act]},total:x.total+(x.checks[act]?-1:1)}:x));}
+      }, [habits, openModal]);
+
+      const allCategoryThemes = useMemo(() => { const col=(list)=>list.flatMap(c=>[...(c.themes||[]),...col(c.subCategories||[])]); return new Set(col(categories)); }, [categories]);
+      const sortedThemesInCategory = useCallback((tList) => [...tList].sort((a,b)=>{ const pa=priorityThemes.has(a)?0:1,pb=priorityThemes.has(b)?0:1; return pa-pb; }), [priorityThemes]);
+
+      // FIXED: Analysis swipe - correct translateX using percentage of single page (25% of 400% wide inner)
+      const handleAnalysisTouchStart = useCallback((ev) => {
+        swipeStartX.current = ev.touches[0].clientX;
+        swipeStartY.current = ev.touches[0].clientY;
+        swipeStartTime.current = Date.now();
+        swipeDeltaX.current = 0;
+      }, []);
+
+      const handleAnalysisTouchMove = useCallback((ev) => {
+        if (swipeStartX.current === null) return;
+        const dx = ev.touches[0].clientX - swipeStartX.current;
+        const dy = ev.touches[0].clientY - swipeStartY.current;
+        // Only handle horizontal swipe, let vertical scroll pass through
+        if (Math.abs(dy) > Math.abs(dx) + 10) return;
+        swipeDeltaX.current = dx;
+        if (analysisPanelInnerRef.current) {
+          const panelW = analysisPanelInnerRef.current.parentElement.offsetWidth;
+          // inner is 400% wide, each page is 25% of inner = 100% of visible width
+          // dx pixels → dx/panelW * 25% of inner width shift
+          const dxPct = panelW > 0 ? (dx / panelW) * 25 : 0;
+          const base = -analysisPage * 25;
+          analysisPanelInnerRef.current.style.transition = 'none';
+          analysisPanelInnerRef.current.style.transform = `translateX(${base + dxPct}%)`;
+        }
+      }, [analysisPage]);
+
+      const handleAnalysisTouchEnd = useCallback(() => {
+        if (swipeStartX.current === null) return;
+        const elapsed = Date.now() - swipeStartTime.current;
+        const velocity = Math.abs(swipeDeltaX.current) / elapsed;
+        let np = analysisPage;
+        if (velocity > 0.35 || Math.abs(swipeDeltaX.current) > 60) {
+          if (swipeDeltaX.current < 0 && analysisPage < 3) np = analysisPage + 1;
+          else if (swipeDeltaX.current > 0 && analysisPage > 0) np = analysisPage - 1;
+        }
+        swipeStartX.current = null; swipeDeltaX.current = 0;
+        // FIXED: apply to new page position
+        if (analysisPanelInnerRef.current) {
+          analysisPanelInnerRef.current.style.transition = 'transform 0.35s cubic-bezier(.4,0,.2,1)';
+          analysisPanelInnerRef.current.style.transform = `translateX(${-np * 25}%)`;
+        }
+        setAnalysisPage(np);
+      }, [analysisPage]);
+
+      // FIXED: sync panel transform whenever analysisPage changes (e.g., when clicking dots)
+      useEffect(() => {
+        if (analysisPanelInnerRef.current) {
+          analysisPanelInnerRef.current.style.transition = 'transform 0.35s cubic-bezier(.4,0,.2,1)';
+          analysisPanelInnerRef.current.style.transform = `translateX(${-analysisPage * 25}%)`;
+        }
+      }, [analysisPage]);
+
+      const renderTheme = useCallback((tName) => {
+        if(hiddenThemes[tName]) return null;
+        const isPriority = priorityThemes.has(tName);
+        const isCheckboxMode = themeCheckboxSet.has(tName);
+        const isChecked = isCheckboxMode && !!themeCheckedToday[tName];
+        if (isCheckboxMode) {
+          const handleCheckboxClick = () => { const newVal = !themeCheckedToday[tName]; const next = { ...themeCheckedToday, [tName]: newVal }; setThemeCheckedToday(next); localStorage.setItem('theme_checked_today_v1', JSON.stringify(next)); localStorage.setItem('theme_checked_today_date_v1', todayStr); };
+          return e('div', { key:tName, className:`theme-card theme-checkbox-mode ${isChecked?'checked':''} bg-white rounded-[2rem] card-elevated border border-slate-200 mb-3 overflow-hidden`, onClick: handleCheckboxClick },
+            e('div', { className:'flex justify-between items-center p-5' },
+              e('div', { className:'flex items-center gap-3 flex-1' },
+                e('div', { className:`theme-checkbox-big ${isChecked?'checked':''}` }, isChecked ? e('span',null,'✓') : e('span',{style:{fontSize:'14px',color:'#8b5cf6'}},'☐')),
+                e('div', null, isPriority && e('span', { className:'text-amber-400 text-sm mr-1' }, '⭐'), e('h2', { className:`text-lg font-black ${isChecked?'text-emerald-700':'text-slate-600'}` }, tName), e('div', { className:`text-[10px] font-bold mt-0.5 ${isChecked?'text-emerald-500':'text-purple-400'}` }, isChecked?'✅ 오늘 완료! (달성도 100%)':'탭하면 오늘 달성 처리됩니다'))
+              ),
+              e('div', { className:'flex flex-col gap-1 items-end', onClick:ev=>ev.stopPropagation() },
+                e('button', { type:'button', onClick:()=>openModal('THEME_EDIT',tName,tName), className:'text-indigo-400 text-[9px] font-bold px-1.5 py-0.5 bg-indigo-50 rounded-md' }, '수정'),
+                e('button', { type:'button', onClick:()=>toggleThemeHide(tName), className:'text-slate-400 text-[10px]' }, e('i', { className:'fa-solid fa-eye-slash' })),
+                e('button', { type:'button', onClick:()=>{ if(confirm('삭제할까요?'))setThemes(themes.filter(t=>t!==tName)); }, className:'text-slate-300 text-[10px] font-bold' }, '삭제')
+              )
+            )
+          );
+        }
+        const tHabits = habits.filter(h=>h.theme===tName);
+        const dailyScores = dates.map(d=>tHabits.length?Math.round((tHabits.filter(h=>h.checks[d]).length/tHabits.length)*100):0);
+        const isCollapsed = collapsedStates[tName];
+        let activeTarget=0,gDates=[]; goals.forEach(g=>{const item=g.targetItems.find(it=>it.theme===tName&&it.type!=='category');if(item&&item.target>activeTarget){activeTarget=item.target;gDates=getGoalDates(g.startDate,g.endDate);}});
+        const periodScore=(()=>{if(!gDates.length||!tHabits.length)return 0;const tc=tHabits.reduce((a,h)=>a+gDates.filter(d=>h.checks[d]).length,0);return Math.round((tc/(tHabits.length*gDates.length))*100);})();
+        return e('div', { key:tName, className:`theme-card bg-white rounded-[2rem] card-elevated border border-slate-200 mb-3 overflow-hidden${isPriority?' priority':''}` },
+          e('div', { className:'flex justify-between items-center p-5 cursor-pointer', onClick:()=>toggleCollapse(tName) },
+            e('div', { className:'flex items-center gap-2 flex-wrap' },
+              isPriority && e('span', { className:'text-amber-400 text-sm' }, '⭐'),
+              e('h2', { className:`text-lg font-black ${isPriority?'text-amber-700':'text-slate-800'}` }, tName),
+              e('button', { type:'button', onClick:(ev)=>{ev.stopPropagation();openModal('THEME_EDIT',tName,tName);}, className:'text-indigo-400 text-[9px] font-bold px-1.5 py-0.5 bg-indigo-50 rounded-md' }, '수정'),
+              e('button', { type:'button', onClick:(ev)=>{ev.stopPropagation();togglePriority(tName);}, className:`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${isPriority?'bg-amber-100 text-amber-600':'bg-slate-100 text-slate-400'}`}, isPriority?'⭐우선':'☆순위'),
+              e('span', { className:'text-[10px] font-black text-indigo-400' }, isCollapsed?'▼':'▲'),
+              e('button', { type:'button', onClick:(ev)=>{ev.stopPropagation();toggleThemeHide(tName);}, className:'text-slate-400 text-[10px] ml-1' }, e('i', { className:'fa-solid fa-eye-slash' }))
+            ),
+            e('button', { type:'button', onClick:(ev)=>{ev.stopPropagation();if(confirm('삭제할까요?'))setThemes(themes.filter(t=>t!==tName));}, className:'text-slate-300 text-[10px] font-bold' }, '삭제')
+          ),
+          e('div', { className:`collapsible-content expand-down ${isCollapsed?'collapsed':'expanded'} px-5 pb-5` },
+            e('div', { className:'chart-wrapper' }, e(TrendChart, { data:dailyScores, labels:dates, color:isPriority?'#f59e0b':'#6366f1', targetValue:activeTarget, averageValue:themeAnalysis.find(a=>a.name===tName)?.score||0, hasGoal:activeTarget>0, goalDates:gDates, periodScore, maxY:115 })),
+            e('div', { className:'mt-1 space-y-0' }, tHabits.map(h=>e(HabitItem,{key:h.id,habit:h,dates,onAction:handleHabitAction})))
+          )
+        );
+      }, [hiddenThemes, priorityThemes, themeCheckboxSet, themeCheckedToday, todayStr, habits, dates, collapsedStates, goals, themeAnalysis, themes, handleHabitAction, openModal, toggleCollapse, toggleThemeHide, togglePriority]);
+
+      const renderCategoryChart = useCallback((cat) => {
+        const catThemes = getCategoryThemes(cat); if(!catThemes.length) return null;
+        const isChartHidden = hiddenCategoryCharts[cat.id];
+        if (isChartHidden) { return e('div', { key:'cat_chart_'+cat.id, className:'flex items-center gap-2 mb-2 px-2' }, e('i', { className:'fa-solid fa-chart-line text-violet-200 text-xs' }), e('span', { className:'text-[10px] text-violet-300 font-bold flex-1' }, cat.name+' 달성률 (숨김)'), e('button', { type:'button', onClick:(ev)=>{ev.stopPropagation();toggleCategoryChartHide(cat.id);}, className:'text-[9px] font-black text-violet-400 bg-violet-50 px-2 py-0.5 rounded-full border border-violet-100' }, '👁 표시')); }
+        const dailyScores = getCategoryDailyScores(cat); const maxScore = catThemes.length * 100;
+        const avgScore = dates.length?Math.round(dailyScores.reduce((a,b)=>a+b,0)/dates.length):0;
+        const chartKey = 'cat_chart_'+cat.id; const isCollapsed = collapsedStates[chartKey];
+        let activeTarget=0,gDates=[]; goals.forEach(g=>{const item=g.targetItems.find(it=>it.type==='category'&&it.catId===cat.id);if(item&&item.target>activeTarget){activeTarget=item.target;gDates=getGoalDates(g.startDate,g.endDate);}});
+        const periodScore=(()=>{ if(!gDates.length||!catThemes.length) return 0; const tot=catThemes.length*100; const ach=catThemes.reduce((a,tN)=>{const th=habits.filter(h=>h.theme===tN);if(!th.length)return a;return a+gDates.reduce((da,d)=>da+Math.round((th.filter(h=>h.checks[d]).length/th.length)*100),0);},0); return Math.round((ach/gDates.length/tot)*100); })();
+        const ns = dailyScores.map(s=>maxScore>0?Math.round((s/maxScore)*100):0); const na = maxScore>0?Math.round((avgScore/maxScore)*100):0;
+        return e('div', { key:chartKey, className:'theme-card category-chart-card bg-white rounded-[2rem] card-elevated border border-slate-200 mb-3 overflow-hidden' },
+          e('div', { className:'flex justify-between items-center p-4 cursor-pointer', onClick:()=>toggleCollapse(chartKey) },
+            e('div', { className:'flex items-center gap-2' }, e('i', { className:'fa-solid fa-chart-line text-violet-400 text-sm' }), e('h2', { className:'text-base font-black text-slate-700' }, cat.name+' 달성률'), e('span', { className:'text-[10px] font-black text-violet-400' }, isCollapsed?'▼':'▲')),
+            e('div', { className:'flex items-center gap-2', onClick:ev=>ev.stopPropagation() }, e('span', { className:'text-[10px] font-bold text-slate-400' }, `${avgScore}/${maxScore}pt`), e('span', { className:'text-[10px] font-black text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full' }, `${na}%`), e('button', { type:'button', onClick:(ev)=>{ev.stopPropagation();toggleCategoryChartHide(cat.id);}, className:'text-slate-300 hover:text-violet-400 ml-1', title:'그래프 숨기기' }, e('i', { className:'fa-solid fa-eye-slash text-[11px]' })))
+          ),
+          e('div', { className:`collapsible-content expand-down ${isCollapsed?'collapsed':'expanded'} px-4 pb-4` },
+            e('div', { className:'text-[9px] text-slate-400 font-bold mb-1' }, `최대 ${maxScore}pt (테마 ${catThemes.length}개 × 100%)`),
+            e('div', { className:'chart-wrapper' }, e(TrendChart, { data:ns, labels:dates, color:'#a78bfa', targetValue:activeTarget, averageValue:na, hasGoal:activeTarget>0, goalDates:gDates, periodScore, maxY:115 }))
+          )
+        );
+      }, [getCategoryThemes, getCategoryDailyScores, dates, collapsedStates, goals, habits, toggleCollapse, hiddenCategoryCharts, toggleCategoryChartHide]);
+
+      const renderCategoryGraphsOnly = useCallback(() => {
+        const renderForCat = (cat, depth) => e('div', { key: 'cgonly_'+cat.id }, getCategoryThemes(cat).length > 0 && renderCategoryChart(cat), (cat.subCategories||[]).map(sub => renderForCat(sub, depth+1)));
+        return e('div', { className:'mb-4' }, categories.length === 0 ? e('div', { className:'text-center text-slate-400 text-sm font-bold py-8' }, '카테고리가 없습니다') : categories.map(cat => renderForCat(cat, 0)));
+      }, [categories, getCategoryThemes, renderCategoryChart]);
+
+      const CategoryNode = useMemo(() => memo(({ category, depth=0 }) => {
+        const isCollapsed = collapsedStates[category.id]; const isHidden = hiddenCategories[category.id];
+        const d = Math.min(depth, 3);
+        const addThemeToCategory = (tName) => { setCategories(p=>{ const cl=removeThemeFromAllCategories(p,tName); return updateCategoryRecursive(cl,category.id,c=>({...c,themes:[...c.themes,tName].sort((a,b)=>themes.indexOf(a)-themes.indexOf(b))})); }); };
+        const removeThemeFromCategory = (tName) => setCategories(p=>updateCategoryRecursive(p,category.id,c=>({...c,themes:c.themes.filter(t=>t!==tName)})));
+        const getRootId = (list, targetId) => { for(const c of list){ if(c.id===targetId)return c.id; const f=getRootId(c.subCategories||[],targetId); if(f)return c.id; } return null; };
+        const rootId = getRootId(categories, category.id);
+        const collectAllThemesInTree = (list) => list.flatMap(c=>[...(c.themes||[]),...collectAllThemesInTree(c.subCategories||[])]);
+        const themesInOtherTrees = useMemo(() => { const others=categories.filter(c=>c.id!==rootId); return new Set(collectAllThemesInTree(others)); }, [categories, rootId]);
+        const collectSelfThemes = (cat) => [...(cat.themes||[]),...(cat.subCategories||[]).flatMap(collectSelfThemes)];
+        const selfThemes = new Set(collectSelfThemes(category));
+        const availableThemes = themes.filter(t=>!themesInOtherTrees.has(t)&&!selfThemes.has(t));
+        const collectAllCatIds = (list) => list.flatMap(c=>[c.id,...collectAllCatIds(c.subCategories||[])]);
+        const selfAndDescendants = new Set(collectAllCatIds([category]));
+        const collectMovableTargets = (list, d2=0) => list.flatMap(c=>{ const entry={id:c.id,name:'　'.repeat(d2)+c.name}; return selfAndDescendants.has(c.id)?[]:[entry,...collectMovableTargets(c.subCategories||[],d2+1)]; });
+        const movableTargets = collectMovableTargets(categories);
+        const handleMoveCategory = (destId) => { if(!destId) return; setCategories(p => { const {newList, extracted} = extractCategory(p, category.id); if(!extracted) return p; if(destId==='__root__') return [...newList, extracted]; const numId = isNaN(Number(destId)) ? destId : Number(destId); return updateCategoryRecursive(newList, numId, c=>({...c, subCategories:[...(c.subCategories||[]),extracted]})); }); };
+        const catThemes = getCategoryThemes(category); const sortedCatThemes = sortedThemesInCategory(category.themes||[]);
+        return e('div', { style:{ marginLeft:depth>0?'10px':'0' } },
+          e('div', { className:`category-depth-${d}${isHidden?' category-hidden':''}` },
+            e('div', { className:`category-header-${d}` },
+              e('div', { className:'flex items-center gap-2 flex-1', onClick:()=>toggleCollapseCategory(category.id, category) },
+                e('i', { className:`fa-solid fa-folder${isCollapsed?'':'-open'} text-indigo-400 text-xs` }),
+                e('span', { className:`font-black text-slate-700 text-${d===0?'sm':'xs'}` }, category.name),
+                e('span', { className:'text-[9px] text-slate-400 font-bold ml-1' }, isCollapsed?'▼':'▲')
+              ),
+              e('div', { className:'flex gap-1 items-center flex-wrap', onClick:ev=>ev.stopPropagation() },
+                e('select', { className:'text-[8px] font-bold bg-white border border-indigo-200 rounded-lg px-1 py-0.5 outline-none max-w-[58px]', value:'', onChange:(ev)=>{ if(ev.target.value) addThemeToCategory(ev.target.value); } }, e('option', {value:''}, '+ 테마'), availableThemes.map(t=>e('option',{key:t,value:t},t))),
+                e('select', { className:'text-[8px] font-bold bg-white border border-slate-200 rounded-lg px-1 py-0.5 outline-none max-w-[58px]', value:'', onChange:(ev)=>handleMoveCategory(ev.target.value) }, e('option', {value:''}, '↗이동'), e('option', {value:'__root__'}, '▲최상위'), movableTargets.map(t=>e('option',{key:t.id,value:t.id},t.name))),
+                e('button', { type:'button', onClick:()=>openModal('ADD_SUB_CATEGORY',null,'',category.id), className:'text-[8px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-1 rounded-full' }, '+ 하위'),
+                e('button', { type:'button', onClick:()=>openModal('CATEGORY_RENAME',category.id,category.name), className:'text-[8px] font-bold text-slate-500 bg-slate-100 px-1.5 py-1 rounded-full' }, '수정'),
+                e('button', { type:'button', onClick:()=>toggleCategoryHide(category.id), className:`text-[8px] font-bold px-1.5 py-1 rounded-full ${isHidden?'bg-indigo-100 text-indigo-500':'bg-slate-100 text-slate-400'}` }, e('i', { className:'fa-solid fa-eye-slash text-[9px]' })),
+                e('button', { type:'button', onClick:()=>{ if(confirm('카테고리를 삭제할까요?'))setCategories(p=>{ const rm=(list)=>list.filter(c=>c.id!==category.id).map(c=>({...c,subCategories:rm(c.subCategories||[])})); return rm(p); }); }, className:'text-slate-300 text-[9px] px-1' }, e('i', { className:'fa-solid fa-trash' }))
+              )
+            ),
+            !isHidden && e('div', { className:`collapsible-content expand-down ${isCollapsed?'collapsed':'expanded'} category-body-${d}` },
+              catThemes.length>0 && renderCategoryChart(category),
+              (category.subCategories||[]).map(sub=>e(CategoryNode,{key:sub.id,category:sub,depth:depth+1})),
+              sortedCatThemes.map(tName=>{ if(!themes.includes(tName)) return null; const isHid=hiddenThemes[tName]; return e('div',{key:tName}, !isHid&&e('div',{className:'flex justify-end mb-[-6px] mr-1 relative z-10'}, e('button',{type:'button',onClick:()=>removeThemeFromCategory(tName),className:'text-[8px] font-bold text-orange-400 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full'},'↑ 빼기')), renderTheme(tName)); })
+            )
+          )
+        );
+      }), [collapsedStates, hiddenCategories, categories, themes, hiddenThemes, priorityThemes, themeCheckboxSet, themeCheckedToday, getCategoryThemes, sortedThemesInCategory, renderCategoryChart, renderTheme, openModal, toggleCollapseCategory, toggleCategoryHide, hiddenCategoryCharts, toggleCategoryChartHide]);
+
+      // ── Render ──
+      return e('div', { className:'max-w-md mx-auto p-5 pb-32 pt-14' },
+        e(SyncBar, { onLogin:handleLogin, onLogout:handleLogout, onManualSync:handleManualSync, isLoggedIn, syncStatus, lastSyncTime }),
+
+        e('header', { className:'mb-4 flex justify-between items-end' },
+          e('h1', { className:'text-4xl font-black text-slate-900 tracking-tighter' }, 'Habit'),
+          e(DayRangeInputs, { pastDays, futureDays, onPastChange: setPastDays, onFutureChange: setFutureDays })
+        ),
+
+        // ── Analysis Panel ──
+        e('div', { className:'bg-white p-5 rounded-[2rem] mb-4 card-elevated border border-slate-200' },
+          e('div', { className:'flex items-center justify-between mb-3' },
+            e('div', { className:'flex items-center gap-3' },
+              e('h3', { className:'text-[11px] font-black text-slate-400 uppercase tracking-wider' },
+                analysisPage===0 ? '기간 테마 분석 (%)' : analysisPage===1 ? '기간 카테고리 분석 (%)' : analysisPage===2 ? '오늘 테마 달성도 (%)' : '오늘 카테고리 달성도 (%)'
+              ),
+              e('div', { className:'flex gap-1 items-center' },
+                [0,1,2,3].map(i => e('div', { key:i, className:`analysis-dot ${analysisPage===i?'active':''}`,
+                  style: i>=2 ? {background: analysisPage===i ? '#10b981' : undefined} : {},
+                  onClick: () => setAnalysisPage(i),
+                  style: { cursor: 'pointer', background: analysisPage===i ? (i>=2?'#10b981':'#6366f1') : '#cbd5e1' }
+                }))
+              )
+            ),
+            analysisPage===0 && e('button', { type:'button', className:'text-[9px] font-black text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full', onClick:()=>{ if(analysisSelectedThemes===null)setAnalysisSelectedThemes([]); else setAnalysisSelectedThemes(null); } }, analysisSelectedThemes===null?'전체':'선택중'),
+            analysisPage===1 && e('button', { type:'button', className:'text-[9px] font-black text-violet-500 bg-violet-50 px-2 py-1 rounded-full', onClick:()=>{ if(analysisSelectedCats===null)setAnalysisSelectedCats([]); else setAnalysisSelectedCats(null); } }, analysisSelectedCats===null?'전체':'선택중'),
+            analysisPage===2 && e('span', { className:'text-[9px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-full' }, todayStr.slice(5).replace('-','/')+' 당일'),
+            analysisPage===3 && e('span', { className:'text-[9px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-full' }, todayStr.slice(5).replace('-','/')+' 당일')
+          ),
+          (analysisPage===0) && e('div', { className:'flex flex-wrap gap-1.5 mb-3' },
+            themes.filter(t=>!hiddenThemes[t]).map(t=>{ const isSel=analysisSelectedThemes===null||analysisSelectedThemes.includes(t); const isPri=priorityThemes.has(t); const isChk=themeCheckboxSet.has(t); return e('button',{key:t,type:'button',onClick:()=>{ if(analysisSelectedThemes===null)setAnalysisSelectedThemes([t]); else setAnalysisSelectedThemes(p=>p.includes(t)?p.filter(x=>x!==t):[...p,t]); },className:`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${isSel?(isPri?'bg-amber-400 text-white border-amber-400':isChk?'bg-purple-500 text-white border-purple-500':'bg-indigo-600 text-white border-indigo-600'):'bg-white text-slate-400 border-slate-200'}`},(isPri?'⭐':isChk?'☐ ':'')+t); })
+          ),
+          (analysisPage===1) && e('div', { className:'flex flex-wrap gap-1.5 mb-3' },
+            allCatsFlat.filter(c=>!hiddenCategories[c.id]&&getCategoryThemes(c).length>0).map(c=>{ const isSel=analysisSelectedCats===null||analysisSelectedCats.includes(c.id); return e('button',{key:c.id,type:'button',onClick:()=>{ if(analysisSelectedCats===null)setAnalysisSelectedCats([c.id]); else setAnalysisSelectedCats(p=>p.includes(c.id)?p.filter(x=>x!==c.id):[...p,c.id]); },className:`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${isSel?'bg-violet-600 text-white border-violet-600':'bg-white text-slate-400 border-slate-200'}`},c.name); })
+          ),
+          // FIXED: analysis panel inner is 400% wide, each page 25%
+          e('div', { className:'analysis-panel-wrap', onTouchStart:handleAnalysisTouchStart, onTouchMove:handleAnalysisTouchMove, onTouchEnd:handleAnalysisTouchEnd },
+            e('div', { ref:analysisPanelInnerRef, className:'analysis-panel-inner' },
+              e('div', { className:'analysis-panel-page' }, e('div', { className:'h-40' }, visibleThemesForAnalysis.length>0 ? e(AnalysisChart, { themes:visibleThemesForAnalysis, habits, dates, goals, priorityThemes, themeCheckboxModes:themeCheckboxSet, themeCheckedToday, todayStr }) : e('div',{className:'h-full flex items-center justify-center text-slate-300 text-sm font-bold'},'테마를 선택하세요'))),
+              e('div', { className:'analysis-panel-page' }, e('div', { className:'h-40' }, visibleCatsForAnalysis.length>0 ? e(CategoryAnalysisChart, { visibleCats:visibleCatsForAnalysis, habits, dates, getCategoryThemes, themeCheckboxModes:themeCheckboxSet, themeCheckedToday, todayStr }) : e('div',{className:'h-full flex items-center justify-center text-slate-300 text-sm font-bold'},'카테고리를 선택하세요'))),
+              e('div', { className:'analysis-panel-page' }, e('div', { className:'h-40' }, visibleThemesForAnalysis.length>0 ? e(TodayThemeChart, { themes:visibleThemesForAnalysis, habits, priorityThemes, themeCheckboxModes:themeCheckboxSet, themeCheckedToday, todayStr }) : e('div',{className:'h-full flex items-center justify-center text-slate-300 text-sm font-bold'},'테마를 선택하세요'))),
+              e('div', { className:'analysis-panel-page' }, e('div', { className:'h-40' }, visibleCatsForAnalysis.length>0 ? e(TodayCategoryChart, { visibleCats:visibleCatsForAnalysis, habits, getCategoryThemes, themeCheckboxModes:themeCheckboxSet, themeCheckedToday, todayStr }) : e('div',{className:'h-full flex items-center justify-center text-slate-300 text-sm font-bold'},'카테고리를 선택하세요')))
+            )
+          ),
+          e('div', { className:'flex justify-center mt-2 gap-1 text-[9px] text-slate-300 font-bold' },
+            e('span', null, '← 스와이프 →'),
+            e('span', { className:'ml-2 text-slate-200' }, `${analysisPage+1}/4`)
+          ),
+          Object.values(hiddenThemes).some(v=>v) && e('div', { className:'mt-4' },
+            e('button', { type:'button', className:'flex items-center gap-2 w-full px-3 py-2 bg-slate-100 rounded-2xl text-[10px] font-black text-slate-500 mb-2', onClick:()=>setHiddenFolderOpen(p=>!p) }, e('i',{className:'fa-solid fa-eye-slash text-slate-400'}), e('span',null,`숨긴 테마 (${themes.filter(t=>hiddenThemes[t]).length}개)`), e('span',{className:'ml-auto'},hiddenFolderOpen?'▲':'▼')),
+            hiddenFolderOpen && e('div', { className:'flex flex-wrap gap-2 px-1' }, themes.filter(t=>hiddenThemes[t]).map(t=>e('button',{key:t,type:'button',onClick:()=>toggleThemeHide(t),className:'px-3 py-1 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold border border-slate-200 flex items-center gap-1'},e('i',{className:'fa-solid fa-eye text-slate-400 text-[8px]'}),t)))
+          ),
+          Object.values(hiddenCategories).some(v=>v) && e('div', { className:'mt-2' },
+            e('button', { type:'button', className:'flex items-center gap-2 w-full px-3 py-2 bg-violet-50 rounded-2xl text-[10px] font-black text-violet-500 mb-2', onClick:()=>setHiddenCatFolderOpen(p=>!p) }, e('i',{className:'fa-solid fa-eye-slash text-violet-400'}), e('span',null,`숨긴 카테고리 (${Object.values(hiddenCategories).filter(Boolean).length}개)`), e('span',{className:'ml-auto'},hiddenCatFolderOpen?'▲':'▼')),
+            hiddenCatFolderOpen && e('div', { className:'flex flex-wrap gap-2 px-1' }, allCatsFlat.filter(c=>hiddenCategories[c.id]).map(c=>e('button',{key:c.id,type:'button',onClick:()=>toggleCategoryHide(c.id),className:'px-3 py-1 bg-violet-100 text-violet-600 rounded-full text-[10px] font-bold border border-violet-200 flex items-center gap-1'},e('i',{className:'fa-solid fa-eye text-violet-400 text-[8px]'}),c.name)))
+          )
+        ),
+
+        // ── Goals ──
+        goals.map(g => {
+          const isCollapsed=collapsedStates[g.id]; const progress=calculateGoalProgress(g);
+          return e('div', { key:g.id, className:`bg-white ${isCollapsed?'p-4':'p-8'} rounded-[2.5rem] mb-4 card-elevated border border-slate-200 relative transition-all` },
+            e('div', { className:`flex justify-between items-center ${isCollapsed?'mb-0':'mb-6'}` },
+              e('div', { className:'flex items-center gap-2 flex-1 min-w-0', onClick:()=>toggleCollapse(g.id), style:{cursor:'pointer'} },
+                e('span', { className:'flex-shrink-0 '+(isCollapsed?'text-lg':'text-2xl') }, '🎯'),
+                e('h3', { className:`font-black text-slate-800 leading-tight ${isCollapsed?'text-base':'text-xl'}`, style:{wordBreak:'keep-all',overflowWrap:'break-word',display:'-webkit-box',WebkitLineClamp:isCollapsed?1:2,WebkitBoxOrient:'vertical',overflow:'hidden'} }, g.project||'새 목표'),
+                isCollapsed && e('span', { className:'flex-shrink-0 text-sm font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full ml-1' }, `${Math.round(progress)}%`)
+              ),
+              e('div', { className:'flex gap-1.5 flex-wrap justify-end flex-shrink-0 ml-2' },
+                e('button', { type:'button', onClick:addNewGoal, className:'px-2 py-1.5 rounded-full text-[9px] font-black bg-emerald-50 text-emerald-600' }, '+ 추가'),
+                e('button', { type:'button', onClick:()=>toggleCollapse(g.id), className:'px-2.5 py-1.5 rounded-full text-[9px] font-black bg-slate-100 text-slate-500' }, isCollapsed?'▼':'▲'),
+                e('button', { type:'button', onClick:()=>toggleGoalEditing(g.id), className:'px-2.5 py-1.5 rounded-full text-[9px] font-black bg-indigo-50 text-indigo-600' }, g.isEditing?'완료':'수정'),
+                e('button', { type:'button', onClick:()=>deleteGoal(g.id), className:'px-2.5 py-1.5 rounded-full text-[9px] font-black bg-pink-50 text-pink-500' }, '삭제')
+              )
+            ),
+            e('div', { className:`collapsible-content expand-down ${isCollapsed?'collapsed':'expanded'}` },
+              !g.isEditing && e('div', { className:'flex justify-center mb-8' }, e(DonutGauge,{percent:progress})),
+              e('div', { className:'space-y-6' },
+                e('div', null, e('label',{className:'goal-label'},'프로젝트명'), e(GoalInputField, { className:'goal-input', disabled:!g.isEditing, value:g.project, placeholder:'프로젝트 이름', onChange:(v)=>updateGoal(g.id,{project:v}) })),
+                e('div', null, e('label',{className:'goal-label'},'목표 수치'),
+                  e('div', { className:'space-y-2' },
+                    g.targetItems.map((item,idx)=>e('div',{key:idx,className:'goal-item-row'},
+                      g.isEditing?e(React.Fragment,null,
+                        e('select',{className:'bg-slate-100 p-2 rounded-xl text-xs font-bold outline-none flex-shrink-0',style:{width:'60px'},value:item.type||'theme',onChange:(ev)=>{const ni=[...g.targetItems];ni[idx]={...ni[idx],type:ev.target.value,theme:themes[0]||'',catId:flatCategoryList[0]?.id||'',catThemes:flatCategoryList[0]?.catThemes||[]};updateGoal(g.id,{targetItems:ni});}},e('option',{value:'theme'},'테마'),e('option',{value:'category'},'카테고리')),
+                        (item.type||'theme')==='theme'?e('select',{className:'bg-slate-100 p-2 rounded-xl text-xs font-bold outline-none',style:{width:'90px',flexShrink:0},value:item.theme||'',onChange:(ev)=>{const ni=[...g.targetItems];ni[idx]={...ni[idx],theme:ev.target.value};updateGoal(g.id,{targetItems:ni});}},themes.map(t=>e('option',{key:t,value:t},t))):e('select',{className:'bg-slate-100 p-2 rounded-xl text-xs font-bold outline-none',style:{width:'90px',flexShrink:0},value:item.catId||'',onChange:(ev)=>{const f=flatCategoryList.find(c=>String(c.id)===ev.target.value);const ni=[...g.targetItems];ni[idx]={...ni[idx],catId:f?.id||'',catThemes:f?.catThemes||[]};updateGoal(g.id,{targetItems:ni});}},flatCategoryList.map(c=>e('option',{key:c.id,value:c.id},c.name))),
+                        e('input',{type:'number',className:'bg-slate-100 p-2 rounded-xl text-sm font-bold text-center flex-shrink-0',style:{width:'52px'},value:item.target,onChange:(ev)=>{const ni=[...g.targetItems];ni[idx].target=parseInt(ev.target.value)||0;updateGoal(g.id,{targetItems:ni});}}),
+                        e('span',{className:'font-bold text-sm flex-shrink-0'},'%'),
+                        e('button',{type:'button',onClick:()=>updateGoal(g.id,{targetItems:g.targetItems.filter((_,i)=>i!==idx)}),className:'text-pink-500 flex-shrink-0 px-1 text-lg leading-none'},'✕')
+                      ):e('div',{className:'text-base font-black text-slate-800'},`[${item.type==='category'?'카테고리':'테마'}] ${item.type==='category'?(flatCategoryList.find(c=>c.id===item.catId)?.name||item.catId):item.theme} ${item.target}%`)
+                    )),
+                    g.isEditing&&e('button',{type:'button',onClick:()=>updateGoal(g.id,{targetItems:[...g.targetItems,{type:'theme',theme:themes[0]||'',target:80}]}),className:'w-full py-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 font-bold text-sm'},'+ 목표 추가')
+                  )
+                ),
+                e('div', null, e('label',{className:'goal-label'},'목표 이유'), e(GoalInputField, { className:'goal-input text-base font-bold text-slate-600', isTextarea:true, disabled:!g.isEditing, value:g.reason, placeholder:'이유를 입력하세요', onChange:(v)=>updateGoal(g.id,{reason:v}) })),
+                e('div',{className:'flex gap-6'},
+                  e('div',{className:'flex-1'},e('div',{className:'flex items-center justify-between mb-2'},e('label',{className:'goal-label !mb-0'},'시작일'),e('span',{className:'text-[10px] font-black text-indigo-500'},'START')),e('input',{type:g.isEditing?'date':'text',className:'goal-input !text-lg',disabled:!g.isEditing,value:g.startDate,onChange:(ev)=>updateGoal(g.id,{startDate:ev.target.value})})),
+                  e('div',{className:'flex-1'},e('div',{className:'flex items-center justify-between mb-2'},e('label',{className:'goal-label !mb-0'},'목표일'),e('span',{className:'text-[10px] font-black text-emerald-500'},getDayDiffText(g.startDate,g.endDate))),e('input',{type:g.isEditing?'date':'text',className:'goal-input !text-lg',disabled:!g.isEditing,value:g.endDate,onChange:(ev)=>updateGoal(g.id,{endDate:ev.target.value})}))
+                )
+              )
+            )
+          );
+        }),
+
+        // ── Nested Categories ──
+        e('div', { className:'mb-8' },
+          e('div', { className:'flex justify-between items-center mb-4 px-2 flex-wrap gap-2' },
+            e('h3', { className:'text-[11px] font-black text-slate-400 uppercase tracking-widest' }, 'Nested Categories'),
+            e('div', { className:'flex gap-2 flex-wrap' },
+              e('button', { type:'button', className:`text-[10px] font-black px-3 py-1.5 rounded-full transition-all ${catGraphOnlyExpanded?'bg-violet-600 text-white':'bg-violet-50 text-violet-600'}`, onClick:()=>setCatGraphOnlyExpanded(p=>!p) }, catGraphOnlyExpanded ? '📊 그래프 접기' : '📊 카테고리 그래프'),
+              e('button', { type:'button', onClick:()=>openModal('ADD_ROOT_CATEGORY'), className:'text-indigo-600 font-bold text-[10px] bg-indigo-50 px-3 py-1.5 rounded-full' }, '+ 최상위 카테고리')
+            )
+          ),
+          catGraphOnlyExpanded && e('div', { className:'bg-white p-4 rounded-[2rem] mb-4 card-elevated border border-violet-100' },
+            e('div', { className:'flex items-center gap-2 mb-4' }, e('i', { className:'fa-solid fa-chart-bar text-violet-500' }), e('h4', { className:'text-[11px] font-black text-violet-500 uppercase tracking-wider' }, '카테고리 달성률 그래프')),
+            renderCategoryGraphsOnly()
+          ),
+          categories.map(cat => e(CategoryNode, { key:cat.id, category:cat })),
+          Object.values(hiddenCategoryCharts).some(Boolean) && e('div', { className:'mt-2 mb-2' },
+            e('button', { type:'button', className:'flex items-center gap-2 w-full px-3 py-2 bg-violet-50 rounded-2xl text-[10px] font-black text-violet-400 mb-2', onClick:()=>{ setHiddenCategoryCharts({}); } }, e('i',{className:'fa-solid fa-eye-slash text-violet-300 text-[10px]'}), e('span',null,`숨긴 카테고리 그래프 (${Object.values(hiddenCategoryCharts).filter(Boolean).length}개) — 모두 표시`), e('i',{className:'fa-solid fa-rotate-left text-violet-300 ml-auto'}))
+          ),
+          themes.filter(t=>!allCategoryThemes.has(t)).length>0 && e('div', { className:'mt-6' },
+            e('h3', { className:'text-[11px] font-black text-slate-400 uppercase mb-4 px-2' }, 'Uncategorized Themes'),
+            sortedThemesInCategory(themes.filter(t=>!allCategoryThemes.has(t))).map(tName=>renderTheme(tName))
+          )
+        ),
+
+        e(NoteBox, { notes, setNotes }),
+
+        // ── Blackboard ──
+        e('div', { className:`blackboard-container ${boardFullscreen?'fullscreen':'mt-4'}` },
+          // FIXED: board header with proper layout to avoid overlap with global buttons in fullscreen
+          e('div', { className:'board-header' },
+            e('div', { className:'flex items-center gap-3' },
+              e('h3', { className:'text-xl font-black text-slate-800' }, '칠판'),
+              !boardFullscreen && e('button', { type:'button', onClick:()=>setBoardCollapsed(!boardCollapsed), className:'text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full' }, boardCollapsed?'펼치기 ▼':'접기 ▲')
+            ),
+            // FIXED: In fullscreen, these are on the LEFT area (not right) so they don't overlap ⚙️ and 🎬
+            e('div', { className:'board-header-right' },
+              // Capture button - NEW
+              boardMode !== 'cursor' ? null : e('button', {
+                type: 'button',
+                onClick: () => { setBoardMode(boardMode === 'capture' ? 'cursor' : 'capture'); setCapturedMemoIds(new Set()); },
+                className: `text-slate-500 px-2 py-1 rounded-lg text-sm ${boardMode==='capture'?'bg-amber-400 text-white':''}`,
+                title: '포획 모드'
+              }, e('i', { className:'fa-solid fa-lasso-sparkles' })),
+              // Photo upload
+              e('label', { htmlFor:'photo-upload-input', className:'photo-upload-btn', title:'사진 부착', style:{cursor:'pointer'} },
+                e('i', { className:'fa-solid fa-image' }),
+                e('span', null, '사진')
+              ),
+              // Fullscreen toggle
+              e('button', { type:'button', onClick:()=>{ setBoardFullscreen(!boardFullscreen); }, className:'text-slate-500 px-1' }, e('i',{className:`fa-solid ${boardFullscreen?'fa-compress':'fa-expand'}`})),
+              // Clear drawing
+              e('button', { type:'button', onClick:()=>{ if(confirm('그림을 지울까요?')){ canvasRef.current.getContext('2d').clearRect(0,0,20000,20000); if(offscreenCanvasRef.current)offscreenCanvasRef.current.getContext('2d').clearRect(0,0,20000,20000); localStorage.removeItem('board_drawing_v3'); } }, className:'text-slate-400 px-1' }, e('i',{className:'fa-solid fa-trash-can'}))
+            )
+          ),
+
+          e('div', { className:`collapsible-content ${(!boardFullscreen&&boardCollapsed)?'collapsed':'expanded'}` },
+            // Capture mode toolbar
+            boardMode === 'capture' && capturedMemoIds.size > 0 && e('div', { className:'flex items-center gap-2 mb-2 px-2 py-1 bg-amber-50 border border-amber-200 rounded-xl' },
+              e('span', { className:'text-[10px] font-black text-amber-600' }, `📦 ${capturedMemoIds.size}개 선택됨`),
+              e('button', { type:'button', className:'text-[10px] font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-full ml-auto', onClick:()=>{ if(confirm(`선택된 ${capturedMemoIds.size}개를 삭제할까요?`)){ setMemos(p=>p.filter(m=>!capturedMemoIds.has(m.id))); setCapturedMemoIds(new Set()); } } }, '🗑 삭제'),
+              e('button', { type:'button', className:'text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full', onClick:()=>setCapturedMemoIds(new Set()) }, '선택 해제')
+            ),
+
+            e('div', {
+              ref: boardAreaRef,
+              className: 'blackboard-area',
+              onPointerDown: handleBoardPointerDown,
+              onPointerUp: handleBoardPointerUp,
+              onTouchStart: handleBoardTouch,
+              onTouchMove: handleBoardTouch,
+              onTouchEnd: () => { lastPinchDist.current=null; lastTouchPos.current={x:0,y:0}; },
+              onClick: (ev) => {
+                if (ev.target===ev.currentTarget||ev.target===boardContentRef.current||ev.target===canvasRef.current) {
+                  setSelectedMemoId(null);
+                  setSelectedStickerIdState(null);
+                  if (boardMode !== 'capture') setCapturedMemoIds(new Set());
+                }
+              }
+            },
+              // Capture rect overlay
+              e('div', { id:'capture-rect', ref: captureRectElRef }),
+
+              e('div', { ref:boardContentRef, className:'board-content-wrapper', style:{transform:`translate(${boardTransform.x}px,${boardTransform.y}px) scale(${boardTransform.s})`} },
+                e('canvas', { ref:canvasRef, width:20000, height:20000, className:'drawing-canvas',
+                  onPointerDown: startDrawing,
+                  onPointerMove: draw,
+                  onPointerUp: stopDrawing,
+                  onPointerLeave: stopDrawing,
+                  onClick: (ev) => { if(boardMode==='cursor'){ev.stopPropagation();setSelectedMemoId(null);} }
+                }),
+
+                // Photo stickers
+                photoStickers.map(sticker => e('div', {
+                  key: sticker.id,
+                  ref: (el) => { if(el) domStickerRefs.current.set(sticker.id,el); else domStickerRefs.current.delete(sticker.id); },
+                  className: `photo-sticker${selectedStickerIdState===sticker.id?' selected':''}${sticker.locked?' locked':''}`,
+                  style: { left: sticker.x, top: sticker.y, width: sticker.w, height: sticker.h },
+                  onPointerDown: (ev) => handleStickerDown(ev, sticker),
+                  // FIXED: clicking outside selected sticker hides zoom icon (handled by board onClick)
+                },
+                  e('img', { src: sticker.src, alt: '' }),
+                  // Controls only show when selected
+                  selectedStickerIdState === sticker.id && e(React.Fragment, null,
+                    e('div', { className:'photo-sticker-delete', onPointerDown:(ev)=>{ev.stopPropagation();setPhotoStickers(p=>p.filter(s=>s.id!==sticker.id));setSelectedStickerIdState(null);} }, '✕'),
+                    // FIXED: lock/unlock button
+                    e('div', { className:'photo-sticker-lock', onPointerDown:(ev)=>{ev.stopPropagation();setPhotoStickers(p=>p.map(s=>s.id===sticker.id?{...s,locked:!s.locked}:s));}, title:sticker.locked?'고정 해제':'고정' }, sticker.locked ? '🔓' : '🔒'),
+                    !sticker.locked && e('div', { className:'photo-sticker-resize', onPointerDown:(ev)=>handleStickerResizeDown(ev, sticker) }, '⤡')
+                  )
+                )),
+
+                memos.map(m=>e('div',{
+                  key:m.id,
+                  ref:(el)=>{if(el)domMemoRefs.current.set(m.id,el);else domMemoRefs.current.delete(m.id);},
+                  className:`memo-card ${m.locked?'locked':''} ${selectedMemoId===m.id?'active-border':''} ${capturedMemoIds.has(m.id)?'captured':''}`,
+                  style:{left:m.x,top:m.y,width:m.w||150,height:m.h||80},
+                  onPointerDown:(ev)=>handleMemoDown(ev,m)
+                },
+                  !m.locked&&e('div',{className:'resize-h',onPointerDown:(ev)=>{ev.stopPropagation();memoResizeIdRef.current=m.id;resizeDirRef.current='h';}}),
+                  !m.locked&&e('div',{className:'resize-v',onPointerDown:(ev)=>{ev.stopPropagation();memoResizeIdRef.current=m.id;resizeDirRef.current='v';}}),
+                  selectedMemoId===m.id&&e('div',{className:'memo-toolbar',onPointerDown:ev=>ev.stopPropagation()},
+                    e('button',{type:'button',className:'tool-btn',onClick:()=>openModal('MEMO_EDIT',m.id,m.text)},'수정'),
+                    e('button',{type:'button',className:`tool-btn ${m.locked?'active':''}`,onClick:()=>setMemos(p=>p.map(x=>x.id===m.id?{...x,locked:!x.locked}:x))},m.locked?'해제':'고정'),
+                    e('button',{type:'button',className:'tool-btn danger',onClick:()=>setMemos(p=>p.filter(x=>x.id!==m.id))},'삭제')
+                  ),
+                  m.text
+                ))
+              )
+            ),
+
+            // Board controls
+            e('div', { className:'board-controls' },
+              e('button',{type:'button',onClick:()=>{setBoardMode('cursor');setCapturedMemoIds(new Set());},className:`p-2 rounded-lg ${boardMode==='cursor'?'bg-indigo-600 text-white':'text-slate-500'}`},e('i',{className:'fa-solid fa-arrow-pointer'})),
+              // NEW: Capture mode button in toolbar
+              e('button',{type:'button',onClick:()=>{setBoardMode(boardMode==='capture'?'cursor':'capture');setCapturedMemoIds(new Set());},className:`p-2 rounded-lg ${boardMode==='capture'?'bg-amber-500 text-white':'text-slate-500'}`,title:'포획 모드'},e('i',{className:'fa-solid fa-crop-simple'})),
+              e('button',{type:'button',onClick:()=>setBoardMode('pen'),className:`p-2 rounded-lg ${boardMode==='pen'?'bg-indigo-600 text-white':'text-slate-500'}`},e('i',{className:'fa-solid fa-pen'})),
+              e('button',{type:'button',onClick:()=>setBoardMode('eraser'),className:`p-2 rounded-lg ${boardMode==='eraser'?'bg-indigo-600 text-white':'text-slate-500'}`},e('i',{className:'fa-solid fa-eraser'})),
+              boardMode==='pen'&&['#ef4444','#f59e0b','#10b981','#3b82f6','#ffffff'].map(c=>e('div',{key:c,className:`color-swatch ${penColor===c?'selected':''}`,style:{backgroundColor:c},onClick:()=>setPenColor(c)})),
+              boardFullscreen&&boardMode==='cursor'&&e(BoardInputBar, { onAdd: handleAdd }),
+              (boardMode==='pen'||boardMode==='eraser')&&e('div',{className:'flex-1 flex items-center justify-end gap-2 px-2'},e('input',{type:'range',min:1,max:boardMode==='eraser'?300:100,value:boardMode==='pen'?penSize:eraserSize,onChange:(ev)=>boardMode==='pen'?setPenSize(parseInt(ev.target.value)):setEraserSize(parseInt(ev.target.value)),className:'w-full'}),e('span',{className:'text-[10px] font-bold text-slate-600 min-w-[24px] text-right'},boardMode==='pen'?penSize:eraserSize))
+            )
+          )
+        ),
+
+        !boardFullscreen && e(BottomBar, { themes, curTheme, onThemeChange: setCurTheme, onAdd: handleAdd, onOpenModal: openModal })
+      );
+    };
+
+    ReactDOM.render(e(App), document.getElementById('root'));
+    window.closeModal = () => document.getElementById('external-modal').classList.remove('active');
+    window.closeSettingsModal = () => document.getElementById('settings-modal').classList.remove('active');
+  </script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    const firebaseConfig = { apiKey:"AIzaSyDoZIQpE5dFYs0ooRQI3ouiIk5TE706Zwk", authDomain:"habit-tracker-db-9b7c0.firebaseapp.com", projectId:"habit-tracker-db-9b7c0", storageBucket:"habit-tracker-db-9b7c0.firebasestorage.app", messagingSenderId:"854539975596", appId:"1:854539975596:web:6a09d27acf61126bc5d809" };
+    const app = initializeApp(firebaseConfig);
+    window.auth = getAuth(app);
+    window.db = getFirestore(app);
+    window.fs = { doc, setDoc };
+  </script>
+  <script type="module">
+    import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    const provider = new GoogleAuthProvider();
+    window.login = async () => { await signInWithPopup(window.auth, provider); };
+    onAuthStateChanged(window.auth, (user) => { window.currentUser = user; });
+  </script>
+</body>
+</html>
