@@ -1,1 +1,78 @@
-sdf
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나만의 만다르트 계획표</title>
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --border-color: #dee2e6;
+            --main-goal-bg: #e7f5ff;
+            --sub-goal-bg: #fff4e6;
+        }
+
+        body { font-family: 'Pretendard', sans-serif; background-color: var(--bg-color); display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        h1 { color: #333; }
+        .mandalart-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; background-color: var(--border-color); padding: 10px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .grid-3x3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
+        textarea { width: 80px; height: 80px; border: none; resize: none; text-align: center; vertical-align: middle; font-size: 12px; padding: 5px; outline: none; transition: background 0.2s; }
+        
+        /* 중앙 메인 목표 그리드 스타일 */
+        .center-grid textarea { background-color: var(--main-goal-bg); font-weight: bold; }
+        .center-grid textarea:nth-child(5) { background-color: #339af0; color: white; } /* 핵심 목표 */
+
+        /* 주변 서브 목표 그리드 스타일 */
+        .sub-grid textarea { background-color: white; }
+        .sub-grid textarea:nth-child(5) { background-color: var(--sub-goal-bg); font-weight: bold; } /* 서브 주제 */
+
+        .controls { margin-top: 20px; }
+        button { padding: 10px 20px; cursor: pointer; border-radius: 5px; border: none; background: #339af0; color: white; font-weight: bold; }
+        button:hover { background: #1c7ed6; }
+    </style>
+</head>
+<body>
+
+    <h1>Mandalart Planner</h1>
+    
+    <div class="mandalart-container" id="mandalart">
+        </div>
+
+    <div class="controls">
+        <button onclick="window.print()">PDF로 저장/인쇄하기</button>
+    </div>
+
+    <script>
+        const container = document.getElementById('mandalart');
+
+        // 9개의 큰 블록 생성
+        for (let i = 0; i < 9; i++) {
+            const grid = document.createElement('div');
+            grid.className = i === 4 ? 'grid-3x3 center-grid' : 'grid-3x3 sub-grid';
+            grid.id = `block-${i}`;
+
+            // 각 블록 안에 9개의 입력창 생성
+            for (let j = 0; j < 9; j++) {
+                const textarea = document.createElement('textarea');
+                textarea.placeholder = "...";
+                
+                // 데이터 연동 (중앙 그리드의 서브 목표들을 주변 그리드 중앙으로 복사)
+                if (i === 4) {
+                    textarea.addEventListener('input', (e) => syncGoals(j, e.target.value));
+                }
+
+                grid.appendChild(textarea);
+            }
+            container.appendChild(grid);
+        }
+
+        function syncGoals(index, value) {
+            if (index === 4) return; // 정중앙 핵심 목표는 제외
+            const targetBlock = document.getElementById(`block-${index}`);
+            if (targetBlock) {
+                targetBlock.children[4].value = value;
+            }
+        }
+    </script>
+</body>
+</html>
