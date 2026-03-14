@@ -242,6 +242,16 @@
     .se-bottom-bar { position:fixed; bottom:0; left:0; right:0; background:white; border-top:1px solid #e2e8f0; padding:12px 16px env(safe-area-inset-bottom,0); display:flex; gap:10px; z-index:99999; }
     .se-btn-add { flex:1; padding:13px; background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:14px; font-size:13px; font-weight:700; color:#64748b; cursor:pointer; }
     .se-btn-save { flex:2; padding:13px; background:#1e293b; color:white; border:none; border-radius:14px; font-size:14px; font-weight:800; cursor:pointer; }
+    .new-feature-container {
+  width: 100%;
+  border: none;
+  border-radius: 2rem;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.08), 0 0 0 1.5px #e2e8f0;
+  display: block;
+  min-height: 200px;
+}
   </style>
 </head>
 <body>
@@ -773,6 +783,21 @@
         )
       );
     });
+const NewFeatureSlot = memo(({ src, height }) => {
+      if (!src) return null;
+      return e('iframe', {
+        src: src,
+        className: 'new-feature-container',
+        style: { minHeight: height || '200px' },
+        scrolling: 'no',
+        onLoad: (ev) => {
+          try {
+            const h = ev.target.contentDocument.body.scrollHeight;
+            if (h > 0) ev.target.style.minHeight = h + 'px';
+          } catch(e) {}
+        }
+      });
+    });
 
     const App = () => {
       const [habits, setHabits] = useState(() => getInitialData('habits_final', []));
@@ -798,7 +823,6 @@
       });
       const [memos, setMemos] = useState(() => getInitialData('memos_final', []));
       const [notes, setNotes] = useState(() => getInitialData('notes_v1', []));
-
       // FIXED BUG: Photo stickers now saved/loaded from localStorage with base64 images
       const [photoStickers, setPhotoStickers] = useState(() => {
         try {
@@ -1671,6 +1695,7 @@
         ),
 
         e(NoteBox, { notes, setNotes }),
+        e(NewFeatureSlot, { src: 'new_feature_1.html', height: '200px' }),
 
         // ── Blackboard ──
         e('div', { className:`blackboard-container ${boardFullscreen?'fullscreen':'mt-4'}` },
